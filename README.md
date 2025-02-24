@@ -1,2 +1,2 @@
 # moon-cave
-A trade bot for Bitget crypto exchange.
+This is a trade bot for Bitget excchange - work under progress :)
