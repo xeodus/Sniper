@@ -1,4 +1,9 @@
 # Trading Risk Manager
+
+A robust risk management module for trading applications written in Rust. This project implements strategies to manage portfolio risk by calculating optimal position sizes, approving trades, and updating portfolio metrics—all designed to help ensure safe and efficient trading operations.
+
+## Tech Stack
+
 ![Rust](https://img.shields.io/badge/Rust-4169E1?style=flat&logo=rust&logoColor=white)
 ![Tokio](https://img.shields.io/badge/tokio-1.0-316192?style=flat&logo=rust&logoColor=white)
 ![Tokio Tungstenite](https://img.shields.io/badge/tokio--tungstenite-0.17-316192?style=flat&logo=rust&logoColor=white)
@@ -9,9 +14,6 @@
 ![SHA2](https://img.shields.io/badge/sha2-0.10-1D3557?style=flat&logo=rust&logoColor=white)
 ![HMAC](https://img.shields.io/badge/hmac-0.12-1D3557?style=flat&logo=rust&logoColor=white)
 ![Chrono](https://img.shields.io/badge/chrono-0.4-023047?style=flat&logo=rust&logoColor=white)
-
-
-A robust risk management module for trading applications written in Rust. This project implements strategies to manage portfolio risk by calculating optimal position sizes, approving trades, and updating portfolio metrics—all designed to help ensure safe and efficient trading operations.
 
 ## Table of Contents
 - [Overview](#overview)
