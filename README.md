@@ -1,5 +1,5 @@
 # Trading Risk Manager
-![Rust](https://img.shields.io/badge/Rust-000000?style=flat&logo=rust&logoColor=0277BD)
+![Rust](https://img.shields.io/badge/Rust-000000?style=flat&logo=rust&logoColor=0277BD&logoWidth=20)
 
 A robust risk management module for trading applications written in Rust. This project implements strategies to manage portfolio risk by calculating optimal position sizes, approving trades, and updating portfolio metrics—all designed to help ensure safe and efficient trading operations.
 
