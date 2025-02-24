@@ -46,10 +46,6 @@ struct RateLimiter {
     last_request: Instant,
 }
 
-impl RateLimiter {
-    
-}
-
 #[derive(Debug)]
 struct DataCollect {
     historical_data: Vec<Candle>,
