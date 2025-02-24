@@ -1,21 +1,5 @@
 # Trading Risk Manager
 
-<svg xmlns="http://www.w3.org/2000/svg" width="150" height="40" viewBox="0 0 150 40" fill="none">
-  <defs>
-    <linearGradient id="bgGradient" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#FF8C00"/>
-      <stop offset="100%" stop-color="#FF4500"/>
-    </linearGradient>
-  </defs>
-  <!-- Rounded Rectangle Background -->
-  <rect width="150" height="40" rx="12" fill="url(#bgGradient)"/>
-  <!-- Rust Text -->
-  <text x="75" y="26" font-family="Arial, sans-serif" font-size="20" fill="white" font-weight="bold" text-anchor="middle">
-    Rust 🦀
-  </text>
-</svg>
-
-
 A robust risk management module for trading applications written in Rust. This project implements strategies to manage portfolio risk by calculating optimal position sizes, approving trades, and updating portfolio metrics—all designed to help ensure safe and efficient trading operations.
 
 ## Table of Contents
