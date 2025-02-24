@@ -1,0 +1,19 @@
+[package]
+name = "intelli_bot"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+tokio = {version = "1.0", features = ["full"]}  #Async runtime
+tokio-tungstenite = "0.17"
+reqwest = {version = "0.11", features = ["json"]}
+serde = {version = "1.0", features = ["derive"]}  #JSON parsing
+serde_json = "1.0"
+serde_urlencoded = "0.7"
+futures-util = "0.3"
+sha2 = "0.10"
+hmac = "0.12"
+hex = "0.4"
+log = "0.4"
+chrono = "0.4"  #Timestamp handling
