@@ -4,13 +4,10 @@
 ![Tokio Tungstenite](https://img.shields.io/badge/tokio--tungstenite-0.17-316192?style=flat&logo=rust&logoColor=white)
 ![Reqwest](https://img.shields.io/badge/reqwest-0.11-005F73?style=flat&logo=rust&logoColor=white)
 ![Serde](https://img.shields.io/badge/serde-1.0-6D6875?style=flat&logo=rust&logoColor=white)
-![Serde JSON](https://img.shields.io/badge/serde--json-1.0-6D6875?style=flat&logo=rust&logoColor=white)
 ![Serde URL Encoded](https://img.shields.io/badge/serde--urlencoded-0.7-6D6875?style=flat&logo=rust&logoColor=white)
 ![Futures Util](https://img.shields.io/badge/futures--util-0.3-457B9D?style=flat&logo=rust&logoColor=white)
 ![SHA2](https://img.shields.io/badge/sha2-0.10-1D3557?style=flat&logo=rust&logoColor=white)
 ![HMAC](https://img.shields.io/badge/hmac-0.12-1D3557?style=flat&logo=rust&logoColor=white)
-![Hex](https://img.shields.io/badge/hex-0.4-1D3557?style=flat&logo=rust&logoColor=white)
-![Log](https://img.shields.io/badge/log-0.4-8ECAE6?style=flat&logo=rust&logoColor=white)
 ![Chrono](https://img.shields.io/badge/chrono-0.4-023047?style=flat&logo=rust&logoColor=white)
 
 
