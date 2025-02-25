@@ -377,6 +377,7 @@ async fn main_loop(config: &Config, exchange: &Arc<Mutex<ExchangeConnection>>, s
             }
         };
 
+        // Updating realtime data from candle pattern
         data_collector.realtime_data = Some(candle.clone());
         data_collector.historical_data.push(candle.clone());
 

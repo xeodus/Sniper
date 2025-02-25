@@ -46,4 +46,4 @@ Ensure you have Rust installed. If not, install it from [rustup.rs](https://rust
 Clone the repository:
 ```bash
 git clone https://github.com/xeodus/moon-cave.git
-cd https://github.com/xeodus/moon-cave
+cd moon-cave
