@@ -1,5 +1,6 @@
 use std::sync::mpsc;
-use std::sync::Arc;
+use::std::sync::Arc;
+use tokio::sync::Mutex;
 use std::{collections::BTreeMap, time::Instant};
 use std::time::Duration;
 use chrono::Utc;
@@ -44,10 +45,6 @@ struct ExchangeConnection {
 struct RateLimiter {
     requests: u32,
     last_request: Instant,
-}
-
-impl RateLimiter {
-    
 }
 
 #[derive(Debug)]
@@ -145,8 +142,8 @@ struct TradeLog {
 
 fn config() -> Config {
     Config {
-        api_key: std::env::var("your api key").expect("API key not set!"),
-        secret_key: std::env::var("your secret key").expect("Secret key not set!"),
+        api_key: std::env::var("API_KEY").expect("API key not set!"),
+        secret_key: std::env::var("SECRET_KEY").expect("Secret key not set!"),
         symbols: vec!["BTC/USDT".to_string()],
         strategy_params: StrategyParams {
             macd_short: 12,
@@ -155,22 +152,40 @@ fn config() -> Config {
             rsi_period: 14,
         },
         risk_params: RiskParams {
-            max_drawndown: 5.0,
-            daily_loss_limit: 2.0,
+            max_drawndown: 0.15,
+            daily_loss_limit: 500.0,
             max_position_size: 10.0,
         },
         paper_mode: true,
     }
 }
 
-fn connect_exchange() -> ExchangeConnection {
-    ExchangeConnection {
-        websocket_url: "wss://api.bitget.com/ws".to_string(),
-        rest_api_url: "https://api.bitget.com/api/v3".to_string(),
-        client: reqwest::Client::new(),
-        rate_limiter: RateLimiter {
-            requests: 0,
-            last_request: Instant::now(),
+impl ExchangeConnection {
+    fn connect_exchange() -> Self {
+        Self {
+            websocket_url: "wss://api.bitget.com/ws".to_string(),
+            rest_api_url: "https://api.bitget.com/api/v3".to_string(),
+            client: reqwest::Client::new(),
+            rate_limiter: RateLimiter {
+                requests: 0,
+                last_request: Instant::now(),
+            }
+        }
+    }
+
+    async fn check_rate_limiter(&mut self) {
+        let elapsed = self.rate_limiter.last_request.elapsed();
+        
+        while elapsed.as_secs() < 60 {
+            if self.rate_limiter.requests >= 100 {
+                tokio::time::sleep(Duration::from_secs(60 - elapsed.as_secs())).await;
+                self.rate_limiter.requests = 0;
+            }
+            else {
+                self.rate_limiter.requests = 0;
+            }
+            self.rate_limiter.requests += 1;
+            self.rate_limiter.last_request = Instant::now();
         }
     }
 }
@@ -263,7 +278,7 @@ impl RiskManager {
                     self.portfolio.average_entry = 0.0;
                 }
                 self.portfolio.realized_pnl += (price - self.portfolio.average_entry) * quantity;
-            }
+            },
             _ => {}
     }
 }
@@ -275,8 +290,9 @@ impl Portfolio {
     }
 }
 
-async fn fetch_realtime_data(exchange: &ExchangeConnection, sender: mpsc::Sender<Candle>) -> Result<(), Box<dyn std::error::Error>> {
-    let ws_url = &exchange.websocket_url;
+async fn fetch_realtime_data(exchange: &Arc<Mutex<ExchangeConnection>>, sender: mpsc::Sender<Candle>) -> Result<(), Box<dyn std::error::Error>> {
+    let ex = exchange.lock().await;
+    let ws_url = &ex.websocket_url;
     let (ws_stream, _) = tokio_tungstenite::connect_async(ws_url).await?;
     let (_, mut read) = ws_stream.split();
 
@@ -294,7 +310,7 @@ async fn fetch_realtime_data(exchange: &ExchangeConnection, sender: mpsc::Sender
     }
     Ok(())
 }
-async fn execute_trade(config: &Config, exchange: &ExchangeConnection, side: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn execute_trade(config: &Config, exchange: &mut ExchangeConnection, side: &str) -> Result<(), Box<dyn std::error::Error>> {
     if config.paper_mode {
         return log_paper_trade(side).await;
     }
@@ -314,7 +330,7 @@ async fn log_paper_trade(side: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn execute_real_trade(config: &Config, exchange: &ExchangeConnection, side: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn execute_real_trade(config: &Config, exchange: &mut ExchangeConnection, side: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut params = BTreeMap::new(); 
     params.insert("timestamp", Utc::now().timestamp_millis().to_string());
     params.insert("side", side.to_uppercase());
@@ -324,6 +340,7 @@ async fn execute_real_trade(config: &Config, exchange: &ExchangeConnection, side
 
     let query_string = serde_urlencoded::to_string(&params)?;
     let signature = generate_signature(&config.secret_key, &query_string);
+    exchange.check_rate_limiter().await;
     let url = format!("{}/order?{}&signature={}", exchange.rest_api_url, query_string, signature);
     let response = exchange.client.post(&url).header("X-MBX-APIKEY", config.api_key.clone()).send().await?;
     let status_code = response.status();
@@ -344,13 +361,10 @@ fn generate_signature(secret_key: &str, query: &str) -> String {
     hex::encode(mac.finalize().into_bytes())
 }
 
-impl RateLimiter {
-
-}
-
-async fn main_loop(config: &Config, exchange: & ExchangeConnection, strategy: &mut StrategyEngine, risk_manager: &mut RiskManager, candle_receiver: mpsc::Receiver<Candle>, _historical_data: Vec<Candle>) -> Result<(), Box<dyn std::error::Error>> {
+async fn main_loop(config: &Config, exchange: &Arc<Mutex<ExchangeConnection>>, strategy: &mut StrategyEngine, risk_manager: &mut RiskManager, candle_receiver: mpsc::Receiver<Candle>, _historical_data: Vec<Candle>) -> Result<(), Box<dyn std::error::Error>> {
+    let mut ex = exchange.lock().await;
     let mut data_collector = DataCollect {
-        historical_data: store_historical_data(&exchange, &config.symbols[0], "1h", 1000).await?,
+        historical_data: store_historical_data(&ex, &config.symbols[0], "1h", 1000).await?,
         realtime_data: None,
     };
 
@@ -358,7 +372,7 @@ async fn main_loop(config: &Config, exchange: & ExchangeConnection, strategy: &m
         let candle = match candle_receiver.recv() {
             Ok(candle) => candle,
             Err(_e) => {
-                log::error!("Candle channel closed, existing main loop.");
+                log::error!("Candle channel closed, exiting main loop.");
                 break;
             }
         };
@@ -375,7 +389,7 @@ async fn main_loop(config: &Config, exchange: & ExchangeConnection, strategy: &m
         let signal_line = strategy.macd.signal_ema.update(macd_line);
         strategy.macd.macd_history.push(macd_line);
 
-        if close_price != strategy.rsi.last_price {
+        while close_price != strategy.rsi.last_price {
             // Update RSI
             let price_change = close_price - strategy.rsi.last_price;
 
@@ -402,7 +416,7 @@ async fn main_loop(config: &Config, exchange: & ExchangeConnection, strategy: &m
             let position_size = risk_manager.calculate_position_size(close_price);
             
             if signal != "HOLD" && risk_manager.approve_trade(signal, position_size, close_price) {
-                execute_trade(config, exchange, signal).await?;
+                execute_trade(config, &mut ex, signal).await?;
                 risk_manager.update_portfolio(signal, position_size, close_price);
 
                 log::info!(
@@ -424,15 +438,16 @@ async fn main_loop(config: &Config, exchange: & ExchangeConnection, strategy: &m
 
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = config();
-    let exchange = Arc::new(connect_exchange());
-    let historical_data = store_historical_data(&exchange, &config.symbols[0], "1h", 1000).await?;
+    let exchange = Arc::new(Mutex::new(ExchangeConnection::connect_exchange()));
+    let historical_data = {
+        let mut ex = exchange.lock().await;
+        store_historical_data(&mut ex, &config.symbols[0], "1h", 1000).await?
+    };
     let mut strategy = initialized_strategy(&config);
     let mut risk_manager = RiskManager::initialized_risk_manager(&config);
-
-    
+    let exchange_clone = Arc::clone(&exchange);
     let (candle_sender, candle_receiver) = mpsc::channel::<Candle>();
 
-    let exchange_clone = Arc::clone(&exchange);
     tokio::spawn(async move {
         if let Err(e) = fetch_realtime_data(&exchange_clone, candle_sender).await {
             eprint!("Error fetching realtime data: {:?}", e);
