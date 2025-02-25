@@ -12,6 +12,7 @@
 ![HMAC](https://img.shields.io/badge/hmac-0.12-1D3557?style=flat&logo=rust&logoColor=white)
 ![Chrono](https://img.shields.io/badge/chrono-0.4-023047?style=flat&logo=rust&logoColor=white)
 
+## Introduction
 
 A robust risk management module for trading applications written in Rust. This project implements strategies to manage portfolio risk by calculating optimal position sizes, approving trades, and updating portfolio metrics—all designed to help ensure safe and efficient trading operations.
 
