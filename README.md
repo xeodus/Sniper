@@ -1,5 +1,3 @@
-# moon-cave
-
 # Trading Risk Manager
 
 ![Rust](https://img.shields.io/badge/Rust-4169E1?style=flat&logo=rust&logoColor=white)
