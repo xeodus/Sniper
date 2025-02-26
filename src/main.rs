@@ -8,6 +8,8 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use tokio_tungstenite::tungstenite::Message;
 
+// Defined struct for configuration to store the essential 
+// components like api key and secret key
 #[derive(Debug, Serialize, Deserialize)]
 struct Config {
     api_key: String,
@@ -18,6 +20,8 @@ struct Config {
     paper_mode: bool,
 }
 
+// Defined struct for strategy parameters essesntial 
+// for MACD calculations
 #[derive(Debug, Serialize, Deserialize)]
 struct StrategyParams {
     macd_short: usize,
@@ -26,6 +30,7 @@ struct StrategyParams {
     rsi_period: usize,
 }
 
+// Defined struct for risk parameters
 #[derive(Debug, Serialize, Deserialize)]
 struct RiskParams {
     max_drawndown: f64,
@@ -33,6 +38,8 @@ struct RiskParams {
     max_position_size: f64,
 }
 
+// Defined struct to store key components like websocket url 
+// and rest api url to establish a connection with the exchange
 #[derive(Debug)]
 struct ExchangeConnection {
     websocket_url: String,
@@ -41,6 +48,8 @@ struct ExchangeConnection {
     rate_limiter: RateLimiter,
 }
 
+// Defined struct for rate limiter function
+// this is crucial for request handling
 #[derive(Debug)]
 struct RateLimiter {
     requests: u32,
@@ -53,6 +62,8 @@ struct DataCollect {
     realtime_data: Option<Candle>,
 }
 
+// Defined struct to store key components
+// to retrieve candle data
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Candle {
     timestamp: i64,
@@ -63,12 +74,16 @@ struct Candle {
     volume: f64,
 }
 
+// Defined struct to store MACD and RSI data
+// in one place and use them in strategy engine function
 #[derive(Debug)]
 struct StrategyEngine {
     macd: MACD,
     rsi: RSI,
 }
 
+// Defined struct to store crucial components to calculate
+// exponential moving average
 #[derive(Debug)]
 struct EMA {
     period: usize,
@@ -99,6 +114,7 @@ impl EMA {
     }
 }
 
+// Struct MACD calculation
 #[derive(Debug)]
 struct MACD {
     short_ema: EMA,
@@ -107,6 +123,7 @@ struct MACD {
     macd_history: Vec<f64>,
 }
 
+// Struct for RSI calculation
 #[derive(Debug)]
 struct RSI {
     period: usize,
@@ -131,6 +148,7 @@ struct Portfolio {
     realized_pnl: f64,
 }
 
+// Defined struct to store key components of a tradelog
 #[derive(Debug, Serialize)]
 struct TradeLog {
     timestamp: i64,
@@ -310,6 +328,7 @@ async fn fetch_realtime_data(exchange: &Arc<Mutex<ExchangeConnection>>, sender: 
     }
     Ok(())
 }
+
 async fn execute_trade(config: &Config, exchange: &mut ExchangeConnection, side: &str) -> Result<(), Box<dyn std::error::Error>> {
     if config.paper_mode {
         return log_paper_trade(side).await;
@@ -318,6 +337,8 @@ async fn execute_trade(config: &Config, exchange: &mut ExchangeConnection, side:
         return execute_real_trade(config, exchange, side).await;
     }
 }
+
+// Defined function for log paper trade using TradeLog struct
 async fn log_paper_trade(side: &str) -> Result<(), Box<dyn std::error::Error>> {
     let log_entry = TradeLog {
         timestamp: Utc::now().timestamp(),
@@ -330,6 +351,7 @@ async fn log_paper_trade(side: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+// Define function to execute real trades
 async fn execute_real_trade(config: &Config, exchange: &mut ExchangeConnection, side: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut params = BTreeMap::new(); 
     params.insert("timestamp", Utc::now().timestamp_millis().to_string());
@@ -352,6 +374,8 @@ async fn execute_real_trade(config: &Config, exchange: &mut ExchangeConnection, 
     Ok(())
 }
 
+// Function to generate signature using SHA-256 
+// to ensure data integrity and authenticity
 fn generate_signature(secret_key: &str, query: &str) -> String {
     use hmac::{Hmac, Mac};
     use sha2::Sha256;
@@ -361,6 +385,8 @@ fn generate_signature(secret_key: &str, query: &str) -> String {
     hex::encode(mac.finalize().into_bytes())
 }
 
+// Defined function main loop to call the predefined functions
+// and execute essential operations in one place
 async fn main_loop(config: &Config, exchange: &Arc<Mutex<ExchangeConnection>>, strategy: &mut StrategyEngine, risk_manager: &mut RiskManager, candle_receiver: mpsc::Receiver<Candle>, _historical_data: Vec<Candle>) -> Result<(), Box<dyn std::error::Error>> {
     let mut ex = exchange.lock().await;
     let mut data_collector = DataCollect {
@@ -383,6 +409,7 @@ async fn main_loop(config: &Config, exchange: &Arc<Mutex<ExchangeConnection>>, s
 
         // Update indicators
         let close_price = candle.close;
+
         // Update MACD
         let short_ema = strategy.macd.short_ema.update(close_price);
         let long_ema = strategy.macd.long_ema.update(close_price);
