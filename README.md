@@ -3,7 +3,8 @@
 # Trading Risk Manager
 
 ![Rust](https://img.shields.io/badge/Rust-4169E1?style=flat&logo=rust&logoColor=white)
-![v0.1.0](crate.io)
+![Crate Version](https://img.shields.io/badge/crate-0.1.0-blue.svg)
+![Welcome Badge](https://img.shields.io/badge/Welcome-Green-black.svg)
 
 ## Introduction
 
