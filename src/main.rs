@@ -20,7 +20,7 @@ struct Config {
     paper_mode: bool,
 }
 
-// Defined struct for strategy parameters essesntial 
+// Defined struct for strategy parameters, essesntial 
 // for MACD calculations
 #[derive(Debug, Serialize, Deserialize)]
 struct StrategyParams {
@@ -48,7 +48,7 @@ struct ExchangeConnection {
     rate_limiter: RateLimiter,
 }
 
-// Defined struct for rate limiter function
+// Defined struct for rate limiter function,
 // this is crucial for request handling
 #[derive(Debug)]
 struct RateLimiter {
@@ -92,6 +92,7 @@ struct EMA {
     initialized: bool,
 }
 
+// EMA calculations
 impl EMA {
     fn new(period: usize) -> Self {
         let alpha = 2.0 / (period as f64 + 1.0);
