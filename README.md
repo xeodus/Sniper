@@ -2,15 +2,9 @@
 
 # Trading Risk Manager
 
-## Tech Stack
-
 ![Rust](https://img.shields.io/badge/Rust-4169E1?style=flat&logo=rust&logoColor=white)
-![Tokio](https://img.shields.io/badge/tokio-1.0-316192?style=flat&logo=rust&logoColor=white)
-![Serde](https://img.shields.io/badge/serde-1.0-6D6875?style=flat&logo=rust&logoColor=white)
-![Futures Util](https://img.shields.io/badge/futures--util-0.3-457B9D?style=flat&logo=rust&logoColor=white)
-![SHA2](https://img.shields.io/badge/sha2-0.10-1D3557?style=flat&logo=rust&logoColor=white)
-![HMAC](https://img.shields.io/badge/hmac-0.12-1D3557?style=flat&logo=rust&logoColor=white)
-![Chrono](https://img.shields.io/badge/chrono-0.4-023047?style=flat&logo=rust&logoColor=white)
+![Crate Version](https://img.shields.io/badge/crate-0.1.0-green.svg)
+![Welcome Badge](https://img.shields.io/badge/Welcome-Devs-green.svg)
 
 ## Introduction
 

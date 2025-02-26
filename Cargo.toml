@@ -17,4 +17,4 @@ hmac = "0.12"
 hex = "0.4"
 log = "0.4"
 chrono = "0.4"  #Timestamp handling
-dotenv = "0.15.0"
+dotenv = "0.15.0" #Includes .env file for sensitive data handling
