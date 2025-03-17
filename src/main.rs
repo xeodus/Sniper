@@ -1,489 +1,262 @@
-use std::sync::mpsc;
-use::std::sync::Arc;
-use tokio::sync::Mutex;
-use std::{collections::BTreeMap, time::Instant};
-use std::time::Duration;
-use chrono::Utc;
-use futures_util::StreamExt;
-use serde::{Deserialize, Serialize};
-use tokio_tungstenite::tungstenite::Message;
+use std::{collections::{BTreeMap, VecDeque}, time::Duration};
+use hmac::{Hmac, Mac};
+use serde::Deserialize;
+use sha2::Sha256;
+use std::collections::HashMap;
+use reqwest::Client;
 
-// Defined struct for configuration to store the essential 
-// components like api key and secret key
-#[derive(Debug, Serialize, Deserialize)]
-struct Config {
+// Stored Data
+#[derive(Debug, Deserialize)]
+struct MarketData {
+    symbol: String,
+    price: f64,
+    bids: Vec<(f64,f64)>,
+    ask: Vec<(f64, f64)>,
+    timestamp: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct OrderResponse {
+    order_id: i32,
+    status: String,
+}
+
+#[derive(Debug)]
+struct RiskParams {
+    window_size: usize,
+    alpha: f64,
+    order_quantity: f64,
+}
+
+fn generate_signature(secret_key: &str, data: &str) -> String {
+    type HmacSha256 = Hmac<Sha256>;
+    let mut mac = HmacSha256::new_from_slice(secret_key.as_bytes()).expect("HMAC can take key of any size.");
+    mac.update(data.as_bytes());
+    let result = mac.finalize();
+    let code_bytes = result.into_bytes();
+    hex::encode(code_bytes)
+}
+
+fn build_query_string(symbol: &str, side: &str, quantity: f64) -> String {
+    let mut params = BTreeMap::new();
+            params.insert("symbol", symbol.to_string());
+            params.insert("side", side.to_string());
+            params.insert("quantity", quantity.to_string());
+            
+            // Iterate through the map and format each "key=value" pair
+            params.iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<String>>().join("&")
+}
+
+// Binance client module
+
+struct BinanceData {
+    http_client: Client,
     api_key: String,
     secret_key: String,
-    symbols: Vec<String>,
-    strategy_params: StrategyParams,
-    risk_params: RiskParams,
-    paper_mode: bool,
+    base_url: String,
 }
 
-// Defined struct for strategy parameters, essesntial 
-// for MACD calculations
-#[derive(Debug, Serialize, Deserialize)]
-struct StrategyParams {
-    macd_short: usize,
-    macd_long: usize,
-    macd_signal: usize,
-    rsi_period: usize,
+trait FetchMarketData {
+    async fn get_market_data(&self, symbol: &str) -> Result<MarketData, Box<dyn std::error::Error>>;
+    async fn place_order(&self, symbol: &str, side: &str, quantity: f64) -> Result<OrderResponse, Box<dyn std::error::Error>>;
 }
 
-// Defined struct for risk parameters
-#[derive(Debug, Serialize, Deserialize)]
-struct RiskParams {
-    max_drawndown: f64,
-    daily_loss_limit: f64,
-    max_position_size: f64,
-}
-
-// Defined struct to store key components like websocket url 
-// and rest api url to establish a connection with the exchange
-#[derive(Debug)]
-struct ExchangeConnection {
-    websocket_url: String,
-    rest_api_url: String,
-    client: reqwest::Client,
-    rate_limiter: RateLimiter,
-}
-
-// Defined struct for rate limiter function,
-// this is crucial for request handling
-#[derive(Debug)]
-struct RateLimiter {
-    requests: u32,
-    last_request: Instant,
-}
-
-#[derive(Debug)]
-struct DataCollect {
-    historical_data: Vec<Candle>,
-    realtime_data: Option<Candle>,
-}
-
-// Defined struct to store key components
-// to retrieve candle data
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct Candle {
-    timestamp: i64,
-    open: f64,
-    high: f64,
-    low: f64,
-    close: f64,
-    volume: f64,
-}
-
-// Defined struct to store MACD and RSI data
-// in one place and use them in strategy engine function
-#[derive(Debug)]
-struct StrategyEngine {
-    macd: MACD,
-    rsi: RSI,
-}
-
-// Defined struct to store crucial components to calculate
-// exponential moving average
-#[derive(Debug)]
-struct EMA {
-    period: usize,
-    alpha: f64,
-    current: f64,
-    initialized: bool,
-}
-
-// EMA calculations
-impl EMA {
-    fn new(period: usize) -> Self {
-        let alpha = 2.0 / (period as f64 + 1.0);
-        Self {
-            period,
-            alpha,
-            current: 0.0,
-            initialized: false,
-        }
+impl FetchMarketData for BinanceData {
+    async fn get_market_data(&self, symbol: &str) -> Result<MarketData, Box<dyn std::error::Error>> {
+        let url = format!("{} {} {}", self.base_url, "/api/v3/ticker/price?symbol=", symbol);
+        let response = self.http_client.get(&url).send().await?.error_for_status()?;
+        let market_data = response.json().await?;
+        Ok(market_data)
     }
-    fn update(&mut self, price: f64) -> f64 {
-        if !self.initialized {
-            self.current = price;
-            self.initialized = true;
+
+    async fn place_order(&self, symbol: &str, side: &str, quantity: f64) -> Result<OrderResponse, Box<dyn std::error::Error>> {
+        let query_string = build_query_string(symbol, side, quantity);
+        let signature = generate_signature(self.secret_key.as_str(), &query_string);
+        let url = format!("{}/api/v3/order?{}&signature={}", self.base_url, query_string, signature);
+        let mut header = HashMap::new();
+        header.insert("X-MBX-APIKEY", self.api_key.clone());
+        let response = self.http_client.post(&url).header("X-MBX-APIKEY", self.api_key.clone()).send().await?;
+        let status_code = response.status();
+
+        if !status_code.is_success() {
+            return Err(format!("Invaild response received: {}", response.text().await?).into());
+        }
+
+        let order_response = response.json().await?;
+        Ok(order_response)
+    }
+}
+
+// Trading model
+
+struct TradeState {
+    order_book_depth: usize,
+    imbalance_threshold: f64,
+    entry_price: f64,
+    ema_period: usize,
+    ema_value: f64,
+    ema_count: usize,
+    sma_buffer: VecDeque<f64>, // Initializes the sma by storing market prices
+    max_position: f64,
+    stop_loss: f64,
+}
+
+trait TradingStrategy {
+    fn update_ema(&mut self, market: &MarketData) -> f64;
+    fn generate_signal(&mut self, market: &MarketData, depth: usize) -> String;
+}
+
+impl TradingStrategy for TradeState {
+
+    fn update_ema(&mut self, market: &MarketData) -> f64 {
+        let alpha = 2.0 / (self.ema_period as f64 + 1.0);
+        
+        if self.ema_count < self.ema_period {
+            self.sma_buffer.push_back(market.price);
+            self.ema_count += 1;
+        }
+        else if self.ema_count == self.ema_period {
+            self.ema_value = self.sma_buffer.iter().sum::<f64>() / self.ema_period as f64 + 1.0;
         }
         else {
-            self.current = self.alpha * price + (1.0 - self.alpha) * self.current;
+            self.ema_value = market.price * alpha + (1.0 - alpha) * self.ema_value;
         }
-        self.current
+
+        self.ema_value
     }
-}
 
-// Struct MACD calculation
-#[derive(Debug)]
-struct MACD {
-    short_ema: EMA,
-    long_ema: EMA,
-    signal_ema: EMA,
-    macd_history: Vec<f64>,
-}
+    fn generate_signal(&mut self, market: &MarketData, depth: usize) -> String {
+        let bid_pressure: f64 = market.bids.iter().take(depth).map(|(price, quantity)| price * quantity).sum();
+        let bid_asks: f64 = market.ask.iter().take(depth).map(|(price, quantity)| price * quantity).sum();
+        let imbalance = (bid_pressure - bid_asks) / (bid_pressure + bid_asks);
 
-// Struct for RSI calculation
-#[derive(Debug)]
-struct RSI {
-    period: usize,
-    avg_gain: f64,
-    avg_loss: f64,
-    last_price: f64,
-}
-
-#[derive(Debug)]
-struct RiskManager {
-    portfolio: Portfolio,
-    max_drawdown: f64,
-    daily_loss_limit: f64,
-    max_position_size: f64,
-}
-
-#[derive(Debug)]
-struct Portfolio {
-    base_currency: f64,
-    crypto_position: f64,
-    average_entry: f64,
-    realized_pnl: f64,
-}
-
-// Defined struct to store key components of a tradelog
-#[derive(Debug, Serialize)]
-struct TradeLog {
-    timestamp: i64,
-    side: String,
-    quantity: f64,
-    price: f64,
-    status: String,
-}  
-
-fn config() -> Config {
-    Config {
-        api_key: std::env::var("API_KEY").expect("API key not set!"),
-        secret_key: std::env::var("SECRET_KEY").expect("Secret key not set!"),
-        symbols: vec!["BTC/USDT".to_string()],
-        strategy_params: StrategyParams {
-            macd_short: 12,
-            macd_long: 26,
-            macd_signal: 9,
-            rsi_period: 14,
-        },
-        risk_params: RiskParams {
-            max_drawndown: 0.15,
-            daily_loss_limit: 500.0,
-            max_position_size: 10.0,
-        },
-        paper_mode: true,
-    }
-}
-
-impl ExchangeConnection {
-    fn connect_exchange() -> Self {
-        Self {
-            websocket_url: "wss://api.bitget.com/ws".to_string(),
-            rest_api_url: "https://api.bitget.com/api/v3".to_string(),
-            client: reqwest::Client::new(),
-            rate_limiter: RateLimiter {
-                requests: 0,
-                last_request: Instant::now(),
+        match self.max_position {
+            0.0 => if imbalance > self.imbalance_threshold && market.price > self.ema_value {
+                "BUY".to_string()
             }
-        }
-    }
-
-    async fn check_rate_limiter(&mut self) {
-        let elapsed = self.rate_limiter.last_request.elapsed();
-        
-        while elapsed.as_secs() < 60 {
-            if self.rate_limiter.requests >= 100 {
-                tokio::time::sleep(Duration::from_secs(60 - elapsed.as_secs())).await;
-                self.rate_limiter.requests = 0;
+            else if imbalance < self.imbalance_threshold && market.price < self.ema_value {
+                "SELL".to_string()
             }
             else {
-                self.rate_limiter.requests = 0;
+                "HOLD".to_string()
+            },
+
+            x if x < 0.0 => if market.price > self.entry_price * (1.0 + self.stop_loss) {
+                "BUY".to_string()
             }
-            self.rate_limiter.requests += 1;
-            self.rate_limiter.last_request = Instant::now();
-        }
-    }
-}
-
-async fn store_historical_data(exchange: &ExchangeConnection, symbol: &str, timeframe: &str, limit: usize) -> Result<Vec<Candle>, Box<dyn std::error::Error>> {
-    let url = format!("{}/kline?symbol={}&timeframe={}&limit={}", exchange.rest_api_url, symbol, timeframe, limit);
-    let response = exchange.client.get(&url).send().await.unwrap();
-    let status_code = response.status();
-
-    if !status_code.is_success() {
-        return Err(format!("API request failed: {:?}", response.text().await?).into());
-    }
-
-    let data: Vec<Vec<String>> = response.json().await.unwrap();
-
-    let candles  = data.into_iter().map(|kline| Candle {
-        timestamp: kline[0].parse().unwrap_or(0),
-        open: kline[1].clone().parse().unwrap(),
-        high: kline[2].clone().parse().unwrap(),
-        low: kline[3].clone().parse().unwrap(),
-        close: kline[4].clone().parse().unwrap(),
-        volume: kline[5].clone().parse().unwrap(),
-    }).collect();
-    Ok(candles)
-} 
-
-fn initialized_strategy(config: &Config) -> StrategyEngine {
-    StrategyEngine {
-        macd: MACD {
-            short_ema: EMA::new(config.strategy_params.macd_short),
-            long_ema: EMA::new(config.strategy_params.macd_long),
-            signal_ema: EMA::new(config.strategy_params.macd_signal),
-            macd_history: Vec::new(),
-        },
-        rsi: RSI {
-            period: config.strategy_params.rsi_period,
-            avg_gain: 0.0,
-            avg_loss: 0.0,
-            last_price: 0.0,
-        }
-    }
-}
-
-impl RiskManager {
-    fn initialized_risk_manager(config: &Config) -> Self {
-        Self {
-            portfolio: Portfolio {
-                base_currency: 1000.0,
-                crypto_position: 0.0,
-                average_entry: 0.0,
-                realized_pnl: 0.0
-            },
-            max_drawdown: config.risk_params.max_drawndown,
-            daily_loss_limit: config.risk_params.daily_loss_limit,
-            max_position_size: config.risk_params.max_position_size,
-        }
-    }
-
-    fn calculate_position_size(&self, price: f64) -> f64{
-        let risk_amount = self.portfolio.total_value() * 0.02;
-        (risk_amount / price).min(self.max_position_size)
-    }
-
-    fn approve_trade(&self, signal: &str, quantity: f64, price: f64) -> bool {
-        match signal {
-            "BUY" => self.portfolio.base_currency >= quantity * price,
-            "SELL" => self.portfolio.crypto_position >= quantity,
-            _ => false
-        }
-    }
-
-    fn update_portfolio(&mut self, signal: &str, quantity: f64, price: f64) {
-        match signal {
-            "BUY" => {
-                let total_cost = self.portfolio.average_entry * self.portfolio.crypto_position;
-                let new_total_cost = total_cost + (quantity * price);
-                if self.portfolio.crypto_position > 0.0 {
-                    self.portfolio.average_entry = new_total_cost / self.portfolio.crypto_position;
-                }
-                else {
-                    self.portfolio.average_entry = 0.0;
-                }
-                self.portfolio.crypto_position += quantity;
-                self.portfolio.base_currency -= quantity * price;
-            },
-            "SELL" => {
-                self.portfolio.crypto_position -= quantity;
-                self.portfolio.base_currency += quantity *price;
-                if self.portfolio.crypto_position <= 0.0 {
-                    self.portfolio.average_entry = 0.0;
-                }
-                self.portfolio.realized_pnl += (price - self.portfolio.average_entry) * quantity;
-            },
-            _ => {}
-    }
-}
-}
-
-impl Portfolio {
-    fn total_value(&self) -> f64 {
-        self.base_currency + (self.crypto_position * self.average_entry)
-    }
-}
-
-async fn fetch_realtime_data(exchange: &Arc<Mutex<ExchangeConnection>>, sender: mpsc::Sender<Candle>) -> Result<(), Box<dyn std::error::Error>> {
-    let ex = exchange.lock().await;
-    let ws_url = &ex.websocket_url;
-    let (ws_stream, _) = tokio_tungstenite::connect_async(ws_url).await?;
-    let (_, mut read) = ws_stream.split();
-
-    while let Some(msg) = read .next().await {
-        let msg = msg?;
-        if let Message::Text(text) = msg {
-            if let Ok(candle) = serde_json::from_str::<Candle>(&text) {
-                let _ = sender.send(candle);
+            else if imbalance > self.imbalance_threshold || market.price > self.ema_value {
+                "BUY".to_string()
             }
             else {
-                println!("Received non-candle massage: {}", text);
+                "HOLD".to_string()
+            },
+
+            x if x > 0.0 => if market.price < self.entry_price * (1.0 - self.stop_loss) {
+                "SELL".to_string()
             }
+            else if imbalance < self.imbalance_threshold || market.price < self.ema_value {
+                "SELL".to_string()
+            }
+            else {
+                "HOLD".to_string()
+            },
+
+            _=> "HOLD".to_string()
         }
-         
-    }
-    Ok(())
-}
-
-async fn execute_trade(config: &Config, exchange: &mut ExchangeConnection, side: &str) -> Result<(), Box<dyn std::error::Error>> {
-    if config.paper_mode {
-        return log_paper_trade(side).await;
-    }
-    else {
-        return execute_real_trade(config, exchange, side).await;
     }
 }
 
-// Defined function for log paper trade using TradeLog struct
-async fn log_paper_trade(side: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let log_entry = TradeLog {
-        timestamp: Utc::now().timestamp(),
-        side: side.to_string(),
-        quantity: 0.01,
-        price: 89000.0,
-        status: "SIMULATED".to_string(),
+// Order execution
+
+async fn execute_order(client: &BinanceData, decision: String, current_position: &mut f64, entry_price: &mut f64, market: &MarketData, risk_params: &RiskParams) -> Result<(), Box<dyn std::error::Error>> {
+    let order_side = match decision.as_str() {
+        "BUY" => if *current_position == 0.0 {
+            "OPEN_LONG"
+        }
+        else {
+            "CLOSE_SHORT"
+        },
+        "SELL" => if *current_position == 0.0 {
+            "OPEN_SHORT"
+        }
+        else {
+            "CLOSE_LONG"
+        },
+        _=> return Ok(())
     };
-    println!("Paper trade: {:?}", log_entry);   
-    Ok(())
-}
 
-// Define function to execute real trades
-async fn execute_real_trade(config: &Config, exchange: &mut ExchangeConnection, side: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let mut params = BTreeMap::new(); 
-    params.insert("timestamp", Utc::now().timestamp_millis().to_string());
-    params.insert("side", side.to_uppercase());
-    params.insert("type", "MARKET".to_string());
-    params.insert("quantity", "0.01".to_string());
-    params.insert("symbol", config.symbols[0].to_string());
+    let quantity = match order_side {
+        "OPEN_SHORT" | "OPEN_LONG" => risk_params.order_quantity,
+        "CLOSE_SHORT" | "CLOSE_LONG" => current_position.abs(),
+        _=> 0.0
+    };
 
-    let query_string = serde_urlencoded::to_string(&params)?;
-    let signature = generate_signature(&config.secret_key, &query_string);
-    exchange.check_rate_limiter().await;
-    let url = format!("{}/order?{}&signature={}", exchange.rest_api_url, query_string, signature);
-    let response = exchange.client.post(&url).header("X-MBX-APIKEY", config.api_key.clone()).send().await?;
-    let status_code = response.status();
+    let result = client.place_order(&market.symbol.as_str(), order_side, quantity);
 
-    if !status_code.is_success() {
-        return Err(format!("Invaild order: {:?}", response.text().await?).into());
+    if result.await.is_ok() {
+        match order_side {
+            "OPEN_LONG" => {
+                *current_position += quantity;
+                *entry_price = market.price;
+            },
+            "OPEN_SHORT" => {
+                *current_position -= quantity;
+                *entry_price = market.price;
+            },
+            _=> {}
+        }
     }
-    println!("Order Successful: {:?}", response.text().await?);
     Ok(())
 }
 
-// Function to generate signature using SHA-256 
-// to ensure data integrity and authenticity
-fn generate_signature(secret_key: &str, query: &str) -> String {
-    use hmac::{Hmac, Mac};
-    use sha2::Sha256;
-    type HmacSha256 = Hmac<Sha256>;
-    let mut mac = HmacSha256::new_from_slice(secret_key.as_bytes()).expect("HMAC can take key of any size");
-    mac.update(query.as_bytes());
-    hex::encode(mac.finalize().into_bytes())
-}
+// Main function
 
-// Defined function main loop to call the predefined functions
-// and execute essential operations in one place
-async fn main_loop(config: &Config, exchange: &Arc<Mutex<ExchangeConnection>>, strategy: &mut StrategyEngine, risk_manager: &mut RiskManager, candle_receiver: mpsc::Receiver<Candle>, _historical_data: Vec<Candle>) -> Result<(), Box<dyn std::error::Error>> {
-    let mut ex = exchange.lock().await;
-    let mut data_collector = DataCollect {
-        historical_data: store_historical_data(&ex, &config.symbols[0], "1h", 1000).await?,
-        realtime_data: None,
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client = BinanceData {
+        http_client: reqwest::Client::new(),
+        api_key: std::env::var("API_KEY").expect("api key not set!"),
+        secret_key: std::env::var("SECRET_KEY").expect("secret key not set!"),
+        base_url: std::env::var("BASE_URL").expect("base url not found!"),
+    };
+
+    let mut state = TradeState {
+        order_book_depth: 10,
+        imbalance_threshold: 0.4,
+        entry_price: 0.0,
+        ema_value: 0.0,
+        ema_count: 0,
+        ema_period: 20,
+        max_position: 100.0,
+        stop_loss: 0.01,
+        sma_buffer: VecDeque::new(),
+    };
+
+    let symbol = "BTCUSDT";
+    let params = RiskParams {
+        window_size: 10,
+        alpha: 0.1,
+        order_quantity: 1.0,
     };
 
     loop {
-        let candle = match candle_receiver.recv() {
-            Ok(candle) => candle,
+        let market_data = match client.get_market_data(&symbol).await {
+            Ok(data) => data,
             Err(_e) => {
-                log::error!("Candle channel closed, exiting main loop.");
-                break;
+                eprintln!("Error fetching the market data!");
+                continue;
             }
         };
 
-        // Updating realtime data from candle pattern
-        data_collector.realtime_data = Some(candle.clone());
-        data_collector.historical_data.push(candle.clone());
+        state.update_ema(&market_data);
+        let signal = state.generate_signal(&market_data, state.order_book_depth);
 
-        // Update indicators
-        let close_price = candle.close;
-
-        // Update MACD
-        let short_ema = strategy.macd.short_ema.update(close_price);
-        let long_ema = strategy.macd.long_ema.update(close_price);
-        let macd_line = short_ema - long_ema;
-        let signal_line = strategy.macd.signal_ema.update(macd_line);
-        strategy.macd.macd_history.push(macd_line);
-
-        while close_price != strategy.rsi.last_price {
-            // Update RSI
-            let price_change = close_price - strategy.rsi.last_price;
-
-            if price_change > 0.0 {
-                strategy.rsi.avg_gain = strategy.rsi.avg_gain * (strategy.rsi.period - 1) as f64 + price_change / strategy.rsi.period as f64;
-                strategy.rsi.avg_loss = strategy.rsi.avg_loss * (strategy.rsi.period - 1) as f64 / strategy.rsi.period as f64; 
-            }
-            else {
-                strategy.rsi.avg_loss = strategy.rsi.avg_loss * (strategy.rsi.period - 1) as f64 - price_change / strategy.rsi.period as f64;
-                strategy.rsi.avg_gain = strategy.rsi.avg_gain * (strategy.rsi.period - 1) as f64 / strategy.rsi.period as f64;
-            }
-
-            let rsi = 100.0 - (100.0 / (1.0 + strategy.rsi.avg_gain / strategy.rsi.avg_loss));
-            let signal = if macd_line > signal_line && rsi < 30.0 {
-                "BUY"
-            }
-            else if macd_line < signal_line && rsi > 70.0 {
-                "SELL"
-            }
-            else {
-                "HOLD"
-            };
-
-            let position_size = risk_manager.calculate_position_size(close_price);
-            
-            if signal != "HOLD" && risk_manager.approve_trade(signal, position_size, close_price) {
-                execute_trade(config, &mut ex, signal).await?;
-                risk_manager.update_portfolio(signal, position_size, close_price);
-
-                log::info!(
-                    "Execute {} order for {} {} @ ${:.2}",
-                    signal,
-                    close_price,
-                    &config.symbols[0],
-                    position_size,
-                )
-            }
-
+        if signal != "HOLD".to_string() {
+            execute_order(&client, signal, &mut state.max_position, &mut state.entry_price, &market_data, &params).await?;
         }
+
         tokio::time::sleep(Duration::from_secs(60)).await;
     }
-    Ok(())
 }
 
-#[tokio::main]
-
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = config();
-    let exchange = Arc::new(Mutex::new(ExchangeConnection::connect_exchange()));
-    let historical_data = {
-        let mut ex = exchange.lock().await;
-        store_historical_data(&mut ex, &config.symbols[0], "1h", 1000).await?
-    };
-    let mut strategy = initialized_strategy(&config);
-    let mut risk_manager = RiskManager::initialized_risk_manager(&config);
-    let exchange_clone = Arc::clone(&exchange);
-    let (candle_sender, candle_receiver) = mpsc::channel::<Candle>();
-
-    tokio::spawn(async move {
-        if let Err(e) = fetch_realtime_data(&exchange_clone, candle_sender).await {
-            eprint!("Error fetching realtime data: {:?}", e);
-        }
-    });
-
-    main_loop(&config, &exchange, &mut strategy, &mut risk_manager, candle_receiver, historical_data).await?;
-
-    Ok(())
-}
+// This bot is under developement, some key features are need to be added.
