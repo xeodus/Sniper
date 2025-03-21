@@ -6,7 +6,7 @@
 ![License: MIT](https://img.shields.io/badge/License-MIT-red.svg)
 
 ## Table of Contents
--[Introduction](#Introduction)
+- [Introduction](#Introduction)
 - [Features](#Core_Features)
 - [Setup Guide](#Setup_Guide)
 
