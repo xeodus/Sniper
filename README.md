@@ -28,14 +28,13 @@ let imbalance = (bid_pressure - bid_asks) / (bid_pressure + bid_asks);
 ```
 
 - **Risk Manangment Protocol:** 
-- 1% stop loss protocol
-- Position sizing constraints
+- [x] 1% stop loss protocol
+- [x] Position sizing constraints
 - **Binance API Integration:** 
-- Secure HMAC-SHA256 authentication
-- Real time market data and order execution
+- [x] Secure HMAC-SHA256 authentication
+- [x] Real time market data and order execution
 - **Rust-Powered Performance:**
-- Leverages Rust's speed and safety for high-performance financial applications
-
+- [x] Leverages Rust's speed and safety for high-performance financial applications
 
 ## Setup Guide
 
