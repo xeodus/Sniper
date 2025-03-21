@@ -10,15 +10,9 @@
 A robust risk management module for trading applications written in Rust. Our mission is to leverage blockchain's transparency to create an automated, auditable and impact focused trading ecosystem.
 
 ## Table of Contents
-- [Overview](#overview)
-- [Features](#features)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Configuration](#configuration)
-- [Examples](#examples)
-- [Contributing](#contributing)
-- [License](#license)
-- [Contact](#contact)
+- [Features](#Core_Features)
+- [Risk Management](#Risk_Management_Protocol)
+- [Setup Guide](#Setup_Guide)
 
 ## Core Features
 - **Order Book Imbalance Strategy:** 
@@ -27,7 +21,7 @@ A robust risk management module for trading applications written in Rust. Our mi
 let imbalance = (bid_pressure - bid_asks) / (bid_pressure + bid_asks);
 ```
 
-- **Risk Manangment Protocol:** 
+- **Risk Manangement Protocol:** 
 - [x] 1% stop loss protocol
 - [x] Position sizing constraints
 - **Binance API Integration:** 
