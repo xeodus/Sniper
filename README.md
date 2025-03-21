@@ -24,19 +24,30 @@ let imbalance = (bid_pressure - bid_asks) / (bid_pressure + bid_asks);
 ```
 
 - **Risk Manangement Protocol:** 
+
 - [x] 1% stop loss protocol
 - [x] Position sizing constraints
+
 - **Binance API Integration:** 
+
 - [x] Secure HMAC-SHA256 authentication
 - [x] Real time market data and order execution
+
 - **Rust-Powered Performance:**
+
 - [x] Leverages Rust's speed and safety for high-performance financial applications
+
+- **Pending Work:**
+
+- [] More efficient error handling
+- [] Backtesting
+- [] Model deployment
 
 ## Setup Guide
 
 - **Requirements:** 
-- Rust 1.65+
-- Binance API and secret keys
+- [x] Rust 1.65+
+- [x] Binance API and secret keys
 
 ```bash
 # .env
