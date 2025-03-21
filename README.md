@@ -5,16 +5,18 @@
 ![Welcome Badge](https://img.shields.io/badge/Welcome-Devs-yellow.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-red.svg)
 
+## Table of Contents
+-[Introduction](#Introduction)
+- [Features](#Core_Features)
+- [Setup Guide](#Setup_Guide)
+
 ## Introduction
 
 A robust risk management module for trading applications written in Rust. Our mission is to leverage blockchain's transparency to create an automated, auditable and impact focused trading ecosystem.
 
-## Table of Contents
-- [Features](#Core_Features)
-- [Risk Management](#Risk_Management_Protocol)
-- [Setup Guide](#Setup_Guide)
 
 ## Core Features
+
 - **Order Book Imbalance Strategy:** 
 
 ```bash
