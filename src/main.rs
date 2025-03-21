@@ -5,7 +5,8 @@ use sha2::Sha256;
 use std::collections::HashMap;
 use reqwest::Client;
 
-// Stored Data
+// Declared structs for storing necessary objects
+
 #[derive(Debug, Deserialize)]
 struct MarketData {
     symbol: String,
@@ -27,6 +28,8 @@ struct RiskParams {
     alpha: f64,
     order_quantity: f64,
 }
+
+// Signature generation by the client
 
 fn generate_signature(secret_key: &str, data: &str) -> String {
     type HmacSha256 = Hmac<Sha256>;
