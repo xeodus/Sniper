@@ -1,4 +1,4 @@
-# Trading Risk Manager
+# Trade Bot 
 
 ![Rust](https://img.shields.io/badge/Rust-006845?style=flat&logo=rust&logoColor=white&labelColor=333333)
 ![Crate Version](https://img.shields.io/badge/crate-0.1.0-green.svg)
