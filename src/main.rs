@@ -1,3 +1,4 @@
+mod config;
 use std::{collections::{BTreeMap, VecDeque}, time::Duration};
 use hmac::{Hmac, Mac};
 use serde::Deserialize;
@@ -212,6 +213,10 @@ async fn execute_order(client: &BinanceData, decision: String, current_position:
     Ok(())
 }
 
+// Error Handling
+
+
+
 // Main function
 
 #[tokio::main]
@@ -258,7 +263,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             execute_order(&client, signal, &mut state.max_position, &mut state.entry_price, &market_data, &params).await?;
         }
 
-        tokio::time::sleep(Duration::from_secs(60)).await;
+        tokio::time::sleep(Duration::from_secs(7)).await;
     }
 }
 
