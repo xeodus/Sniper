@@ -2,7 +2,7 @@ use chrono::Utc;
 use futures_util::{SinkExt, TryStreamExt};
 use reqwest::Client;
 use serde::Deserialize;
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_tungstenite::{connect_async, tungstenite::{protocol::frame::coding::Data, Message}};
 use std::collections::BTreeMap;
 
 pub struct DataConfig {
@@ -37,7 +37,6 @@ pub struct DepthUpdate {
 enum MarketEvent {
     Snapshot(DepthSnapshot),
     Update(DepthUpdate),
-    Error
 }
 
 async fn connect_rest_api(base_url: &str, endpoint: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -81,5 +80,28 @@ async fn fetch_snapshot(config: &DataConfig) -> Result<DepthSnapshot, Box<dyn st
 
     let snapshot = response.json().await?;
     Ok(snapshot)
+}
+
+async fn fetch_update(config: &DataConfig) -> Result<DepthUpdate, Box<dyn std::error::Error>> {
+    let init_update = fetch_snapshot(config).await?;
+    let update = DepthUpdate {
+        symbol: init_update.symbol,
+        bids: init_update.bids,
+        asks: init_update.asks,
+        updated_id: init_update.last_updated_id
+    };
+    Ok(update)
+}
+
+async fn emit_market_event(event: MarketEvent, config: &DataConfig) -> Result<MarketEvent, Box<dyn std::error::Error>> {
+    Ok(match fetch_snapshot(config).await {
+        Ok(snapshot) => MarketEvent::Snapshot(snapshot),
+        Err(snapshot_err) => {
+            match fetch_update(config).await {
+                Ok(update) => MarketEvent::Update(update),
+                Err(update_err) => return Err(format!("Invaild market event occured: Snapshot Error, {} and Update Error, {}", snapshot_err, update_err).into())
+            }
+        }
+    })
 }
 
