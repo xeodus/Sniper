@@ -1,4 +1,6 @@
-mod data_handling;
+pub mod data_handling;
+pub mod strategy;
+pub mod execution;
 use std::{collections::{BTreeMap, VecDeque}, time::Duration};
 use hmac::{Hmac, Mac};
 use serde::Deserialize;

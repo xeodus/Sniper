@@ -2,7 +2,7 @@ use chrono::Utc;
 use futures_util::{SinkExt, TryStreamExt};
 use reqwest::Client;
 use serde::Deserialize;
-use tokio_tungstenite::{connect_async, tungstenite::{protocol::frame::coding::Data, Message}};
+use tokio_tungstenite::{connect_async, tungstenite::Message};
 use std::collections::BTreeMap;
 
 pub struct DataConfig {
@@ -104,4 +104,3 @@ async fn emit_market_event(event: MarketEvent, config: &DataConfig) -> Result<Ma
         }
     })
 }
-
