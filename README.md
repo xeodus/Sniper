@@ -1,8 +1,6 @@
 # Trade Bot 
 
 ![Rust](https://img.shields.io/badge/Rust-006845?style=flat&logo=rust&logoColor=white&labelColor=333333)
-![Crate Version](https://img.shields.io/badge/crate-0.1.0-green.svg)
-![Welcome Badge](https://img.shields.io/badge/Welcome-Devs-yellow.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-red.svg)
 
 ## Table of Contents
@@ -12,8 +10,9 @@
 
 ## Introduction
 
-A robust risk management module for trading applications written in Rust. Our mission is to leverage blockchain's transparency to create an automated, auditable and impact focused trading ecosystem.
+This is a trade bot designed for low latency environments like cryto exchanges. It leverages on robust market algorithms and statitical models to take high-frequency trades, capitalizing on market trends and volatility. The bot is written from scratch in Rust.
 
+**Project Underdevelopement..**
 
 ## Core Features
 
