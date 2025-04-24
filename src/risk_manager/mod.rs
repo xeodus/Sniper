@@ -22,66 +22,78 @@ enum RiskCheckResult {
     WARNING
 }
 
-fn access_risk(account_state: &AccountState, order_request: &OrderRequest) -> RiskCheckResult {
-
-    if order_request.quantity <= 0.0 {
-        log::error!("Order quantity must be greater than zero {}%", order_request.quantity);
-        return RiskCheckResult::REJECTED
-    }
-    else if account_state.account_balance <= 0.0 {
-        log::error!("Insufficient account balance to place the order {}%", account_state.account_balance);
-        return RiskCheckResult::REJECTED
-    }
-    else {
-        println!("Cannot risk check, error state received!");
-    }
-
-    let total_potential_position = account_state.current_position + order_request.quantity;
-
-    if total_potential_position > account_state.max_position {
-        log::error!("Position size limit exceeded!");
-        return RiskCheckResult::REJECTED
-    }
-    else {
-        println!("Cannot risk check, error state received!");
-    }
-
-    let position_value = total_potential_position * order_request.entry_price;
-    let position_percentage = ((position_value / account_state.account_balance) * 100.0).round() as i64;
-    let max_pos_pct_seen = 0;
-    let max_position_pct = max(max_pos_pct_seen, position_percentage);
-
-    if position_percentage > max_position_pct {
-        log::error!("Position percent {}% exceeds max position percent {}%", position_percentage, max_position_pct);
-        return RiskCheckResult::REJECTED
-    }
-    else {
-        println!("Cannot risk check, error state received!");
-    }
-    
-    if order_request.stop_loss != 0.0 {
-        let potential_loss_per_unit = order_request.entry_price - order_request.stop_loss;
-        let total_potential_loss = potential_loss_per_unit * order_request.quantity;
-        let drawdown_pct = ((total_potential_loss / account_state.account_balance) * 100.0).round() as i64;
-        let max_drawdown_seen = 0;
-        let max_drawdown_pct = max(max_drawdown_seen, drawdown_pct);
-
-        if drawdown_pct > max_drawdown_pct {
-            log::error!("Drawdown percentage {}% exceeded maximum allowed drawdown percentage {}%!", drawdown_pct, max_drawdown_pct);
-            return RiskCheckResult::REJECTED
-        }
-    }
-    else {
-        let default_max_loss_pct = 20.0;
-        let potential_loss = (position_value * (default_max_loss_pct * 100.0)).round() as i64;
-        let potential_loss_seen = 0;
-        let max_potential_loss = max(potential_loss_seen, potential_loss);
-
-        if potential_loss > max_potential_loss {
-            log::error!("Potential loss {}% exceeded maximum allowed potential loss {}%", potential_loss, max_potential_loss);
-            return RiskCheckResult::REJECTED
-        }
-    }
-
-    RiskCheckResult::PASSED
+struct RiskConfig {
+    max_position_pct: f64,
+    warn_position_pct: f64,
+    max_drawdown_pct: f64,
+    max_potential_loss: f64
 }
+
+impl RiskConfig {
+    fn check_quantity(&self, req: &OrderRequest) -> RiskCheckResult {
+        if req.quantity <= 0.0 {
+            log::error!("Order quantity must be greater than zero {}%", req.quantity);
+            return RiskCheckResult::REJECTED
+        }
+        RiskCheckResult::PASSED
+    }
+
+    fn check_balance(&mut self, state: &AccountState, req: &OrderRequest) -> RiskCheckResult {
+       if state.account_balance <= 0.0 {
+        log::error!("Order quantity must be greater than zero {}%", req.quantity);
+        return RiskCheckResult::REJECTED
+       }
+       RiskCheckResult::PASSED
+    }
+
+    fn check_position(&mut self, state: &AccountState, req: &OrderRequest) -> RiskCheckResult {
+        let total_potential_position = state.current_position + req.quantity;
+
+        if total_potential_position > state.max_position {
+            log::error!("Position size limit exceeded!");
+            return RiskCheckResult::REJECTED
+        }
+
+        let position_value = total_potential_position * req.entry_price;
+        let position_percentage = (position_value / state.account_balance) * 100.0;
+
+        if position_percentage > self.max_position_pct {
+            log::error!("Position percent {}% exceeds max position percent {}%", position_percentage, self.max_position_pct);
+            return RiskCheckResult::REJECTED
+        }
+        else if position_percentage > self.warn_position_pct {
+            log::warn!("Position percentage exceeded safe theshold, warning triggered {}%", position_percentage);
+            return RiskCheckResult::WARNING
+        }
+        RiskCheckResult::PASSED
+    }
+
+    fn check_drawdown(&mut self, state: &AccountState, req: &OrderRequest) -> RiskCheckResult {
+        if req.stop_loss != 0.0 {
+            let potential_loss_per_unit = match req.side {
+                Side::BUY => req.entry_price - req.stop_loss,
+                Side::SELL => req.stop_loss - req.entry_price
+            };
+            let total_potential_loss = potential_loss_per_unit * req.quantity;
+            let drawdown_pct = (total_potential_loss / state.account_balance) * 100.0;
+    
+            if drawdown_pct > self.max_drawdown_pct {
+                log::error!("Drawdown percentage {}% exceeded maximum allowed drawdown percentage {}%!", drawdown_pct, self.max_drawdown_pct);
+                return RiskCheckResult::REJECTED
+            }
+            RiskCheckResult::PASSED
+        }
+        else {
+            let default_max_loss_pct = 20.0;
+            let total_potential_position = state.current_position + req.quantity;
+            let position_value = total_potential_position * req.entry_price;
+            let potential_loss = position_value * (default_max_loss_pct * 100.0);
+            if potential_loss > self.max_potential_loss {
+                log::error!("Potential loss {}% exceeded maximum allowed potential loss {}%", potential_loss, self.max_potential_loss);
+                return RiskCheckResult::REJECTED
+            }
+            RiskCheckResult::PASSED
+        }
+    }
+}
+

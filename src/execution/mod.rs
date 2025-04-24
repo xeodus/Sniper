@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, env};
+use std::{collections::{BTreeMap, HashMap}, env};
 use chrono::Utc;
 use hmac::{Hmac, Mac};
 use reqwest::Client;
@@ -31,7 +31,7 @@ fn generate_signature(secret_key: &str, data: &str) -> String {
     hex::encode(code_bytes)
 }
 
-async fn prepare_order(side: &Side, data: &str) -> Result<OrderResponse, Box<dyn std::error::Error>> {
+async fn prepare_order(side: &Side) -> Result<OrderResponse, Box<dyn std::error::Error>> {
 
     match side {
         Side::BUY => Signal::BUY,
@@ -43,7 +43,7 @@ async fn prepare_order(side: &Side, data: &str) -> Result<OrderResponse, Box<dyn
     };
 
     let timestamp = Utc::now().timestamp_millis();
-    let mut query_string = BTreeMap::new();
+    let mut query_string = HashMap::new();
     query_string.insert("symbol", "BTCUSDT".to_string());
     query_string.insert("price", "75000.0".to_string());
     query_string.insert("quantity", "1.0".to_string());
@@ -52,11 +52,11 @@ async fn prepare_order(side: &Side, data: &str) -> Result<OrderResponse, Box<dyn
     // Generate signature
     let query_param = serde_urlencoded::to_string(&query_string).unwrap();
     let secret_key = env::var("SECRET_KEY").expect("secret key not found!");
-    let signature = generate_signature(&secret_key, data);
+    let signature = generate_signature(&secret_key, &query_param);
     // Generate request
     let final_query_string = format!("{}&signature={}", query_param, signature);
     let api_key = env::var("API_KEY").expect("API key not found!");
-    let mut headers = BTreeMap::new();
+    let mut headers = HashMap::new();
     headers.insert("X-MBX-APIKEY", &api_key);
     let url = "https://api.binance.com/api/v3/order";
     let client = Client::new();

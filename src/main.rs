@@ -2,6 +2,7 @@ pub mod data_handling;
 pub mod strategy;
 pub mod execution;
 pub mod risk_manager;
+pub mod backtesting;
 use std::{collections::{BTreeMap, VecDeque}, time::Duration};
 use hmac::{Hmac, Mac};
 use serde::Deserialize;

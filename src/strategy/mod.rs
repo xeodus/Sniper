@@ -45,14 +45,14 @@ impl TradeState {
     }
 
     fn update_indicators(&mut self, market: &MarketData) -> f64 {
-        let alpha = 2.0 / self.ema_period as f64 + 1.0;
+        let alpha = 2.0 / (self.ema_period as f64) + 1.0;
 
         if self.price_buffer.len() < self.ema_period {
             self.price_buffer.push_back(market.price);
             self.ema_count += 1;
         }
         else if self.price_buffer.len() == self.ema_period {
-            let sma = self.price_buffer.iter().sum::<f64>() / self.ema_period as f64 + 1.0;
+            let sma = self.price_buffer.iter().sum::<f64>() / (self.ema_period as f64) + 1.0;
             self.ema_value = sma;
         }
         else {
