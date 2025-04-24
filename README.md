@@ -19,12 +19,13 @@ This is a trade bot designed for low latency environments like cryto exchanges. 
 - **Order Book Imbalance Strategy:** 
 
 ```bash
-let imbalance = (bid_pressure - bid_asks) / (bid_pressure + bid_asks);
+let imbalance = (bid_pressure - ask_pressure) / (bid_pressure + ask_pressure);
 ```
 
 - **Risk Manangement Protocol:** 
 
-- [x] 1% stop loss protocol
+- [x] Maxium drawdown percentage and potential loss protocol
+- [x] Advanced stop loss protocol
 - [x] Position sizing constraints
 
 - **Binance API Integration:** 
