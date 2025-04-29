@@ -1,4 +1,3 @@
-use std::{cmp::max, collections::BTreeMap};
 use crate::execution::Side;
 
 struct OrderRequest {
@@ -29,7 +28,14 @@ struct RiskConfig {
     max_potential_loss: f64
 }
 
-impl RiskConfig {
+trait RiskManager {
+    fn check_quantity(&self, req: &OrderRequest) -> RiskCheckResult;
+    fn check_balance(&mut self, state: &AccountState, req: &OrderRequest) -> RiskCheckResult;
+    fn check_position(&mut self, state: &AccountState, req: &OrderRequest) -> RiskCheckResult;
+    fn check_drawdown(&mut self, state: &AccountState, req: &OrderRequest) -> RiskCheckResult;
+}
+
+impl RiskManager for RiskConfig {
     fn check_quantity(&self, req: &OrderRequest) -> RiskCheckResult {
         if req.quantity <= 0.0 {
             log::error!("Order quantity must be greater than zero {}%", req.quantity);
@@ -50,7 +56,7 @@ impl RiskConfig {
         let total_potential_position = state.current_position + req.quantity;
 
         if total_potential_position > state.max_position {
-            log::error!("Position size limit exceeded!");
+            log::error!("Position size limit exceeded: {}%", total_potential_position);
             return RiskCheckResult::REJECTED
         }
 
@@ -96,4 +102,3 @@ impl RiskConfig {
         }
     }
 }
-

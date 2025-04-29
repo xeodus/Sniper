@@ -29,7 +29,13 @@ pub struct TradeState {
     stop_loss: f64,
 }
 
-impl TradeState {
+trait StrategyManager {
+    fn initialize_strategy(&self) -> Self;
+    fn update_indicators(&mut self, market: &MarketData) -> f64;
+    fn generate_signal(&mut self, market: &MarketData, depth: usize) -> Signal;
+}
+
+impl StrategyManager for TradeState {
     fn initialize_strategy(&self) -> Self {
         Self {
             order_book_depth: self.order_book_depth,

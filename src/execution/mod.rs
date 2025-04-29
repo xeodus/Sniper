@@ -1,4 +1,4 @@
-use std::{collections::{BTreeMap, HashMap}, env};
+use std::{env, collections::HashMap};
 use chrono::Utc;
 use hmac::{Hmac, Mac};
 use reqwest::Client;
