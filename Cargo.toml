@@ -1,5 +1,5 @@
 [package]
-name = "intelli_bot"
+name = "Sniper_Bot"
 version = "0.1.0"
 edition = "2021"
 
@@ -16,9 +16,6 @@ sha2 = "0.10"
 hmac = "0.12"
 hex = "0.4"
 log = "0.4"
+csv = "1.2"
 chrono = "0.4"  #Timestamp handling
 dotenv = "0.15.0" #Includes .env file for sensitive data handling
-barter            = "0.12.2"   # barter core
-barter-data       = "0.10.1"   # public market data streams
-barter-execution  = "0.5.3"    # order execution & account feeds
-barter-integration = "0.9.1"   # REST/WebSocket exchange integrations

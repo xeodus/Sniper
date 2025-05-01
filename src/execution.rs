@@ -4,13 +4,15 @@ use hmac::{Hmac, Mac};
 use reqwest::Client;
 use serde::Deserialize;
 use sha2::Sha256;
-use crate::strategy::Signal;
 
+#[derive(Debug)]
 pub enum Side {
     BUY,
-    SELL
+    SELL,
+    HOLD
 }
 
+#[derive(Debug)]
 pub enum OrderType {
     MARKET,
     LIMIT
@@ -22,6 +24,7 @@ pub struct OrderResponse {
     status: String
 
 }
+
 fn generate_signature(secret_key: &str, data: &str) -> String {
     type HmacSha256 = Hmac<Sha256>;
     let mut mac = HmacSha256::new_from_slice(secret_key.as_bytes()).expect("HMAC can take keys of any size.");
@@ -31,26 +34,9 @@ fn generate_signature(secret_key: &str, data: &str) -> String {
     hex::encode(code_bytes)
 }
 
-async fn prepare_order(side: &Side) -> Result<OrderResponse, Box<dyn std::error::Error>> {
-
-    match side {
-        Side::BUY => Signal::BUY,
-        Side::SELL => Signal::SELL,
-        _ => {
-            println!("Waiting for a valid signal..");
-            Signal::HOLD
-        }
-    };
-
-    let timestamp = Utc::now().timestamp_millis();
-    let mut query_string = HashMap::new();
-    query_string.insert("symbol", "BTCUSDT".to_string());
-    query_string.insert("price", "75000.0".to_string());
-    query_string.insert("quantity", "1.0".to_string());
-    query_string.insert("recWindow", "5000".to_string());
-    query_string.insert("timestamp", timestamp.to_string());
+async fn prepare_signed_order<'a>(query_string: &'a HashMap<&'a str, String>) -> Result<OrderResponse, Box<dyn std::error::Error>> {
     // Generate signature
-    let query_param = serde_urlencoded::to_string(&query_string).unwrap();
+    let query_param = serde_urlencoded::to_string(query_string).unwrap();
     let secret_key = env::var("SECRET_KEY").expect("secret key not found!");
     let signature = generate_signature(&secret_key, &query_param);
     // Generate request
@@ -69,4 +55,45 @@ async fn prepare_order(side: &Side) -> Result<OrderResponse, Box<dyn std::error:
 
     let order_res = response.json::<OrderResponse>().await?;
     Ok(order_res)
+}
+
+async fn place_order(side: &Side, type_: &OrderType, symbol: &str, price: f64, quantity: f64, rec_window: f64) -> Side {
+
+    let mut params = HashMap::new();
+    params.insert("symbol", symbol.to_string());
+    params.insert("quantity", format!("{:.8}", quantity));
+    params.insert("side", format!("{:?}", side));
+    
+    if matches!(type_, OrderType::LIMIT) {
+        params.insert("price", format!("{:.8}", price));
+    }
+
+    params.insert("type", format!("{:?}", type_));
+    params.insert("recWindow", format!("{:?}", rec_window));
+    params.insert("timestamp", Utc::now().timestamp_millis().to_string());
+
+    match prepare_signed_order(&params).await {
+        Ok(order_res) => match order_res.status {
+            val if val == "ASK_FILLED".to_owned() => {
+                println!("Ask order filled: {}", order_res.order_id);
+                Side::BUY
+            },
+            val if val == "BID_FILLED".to_owned() => {
+                println!("Bid order filled: {}", order_res.order_id);
+                Side::SELL
+            },
+            val if val == "UNFILLED".to_owned() => {
+                println!("Order not filled yet: {}", order_res.order_id);
+                Side::HOLD
+            },
+            _ => {
+                eprintln!("Error string cases..");
+                Side::HOLD
+            }       
+        },
+        Err(e) => {
+            eprintln!("Error filling the order: {}", e);
+            Side::HOLD
+        }
+    }
 }

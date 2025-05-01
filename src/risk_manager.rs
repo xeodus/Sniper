@@ -1,18 +1,18 @@
 use crate::execution::Side;
 
-struct OrderRequest {
-    entry_price: f64,
-    quantity: f64,
-    stop_loss: f64,
-    side: Side
+pub struct OrderRequest {
+    pub entry_price: f64,
+    pub quantity: f64,
+    pub stop_loss: f64,
+    pub side: Side
 }
 
-struct AccountState {
-    current_position: f64,
-    max_position: f64,
-    price: f64,
-    account_balance: f64,
-    unrealised_pnl: f64
+pub struct AccountState {
+    pub current_position: f64,
+    pub max_position: f64,
+    pub price: f64,
+    pub account_balance: f64,
+    pub unrealised_pnl: f64
 }
 
 enum RiskCheckResult {
@@ -21,14 +21,14 @@ enum RiskCheckResult {
     WARNING
 }
 
-struct RiskConfig {
-    max_position_pct: f64,
-    warn_position_pct: f64,
-    max_drawdown_pct: f64,
-    max_potential_loss: f64
+pub struct RiskConfig {
+    pub max_position_pct: f64,
+    pub warn_position_pct: f64,
+    pub max_drawdown_pct: f64,
+    pub max_potential_loss: f64
 }
 
-trait RiskManager {
+pub trait RiskManager {
     fn check_quantity(&self, req: &OrderRequest) -> RiskCheckResult;
     fn check_balance(&mut self, state: &AccountState, req: &OrderRequest) -> RiskCheckResult;
     fn check_position(&mut self, state: &AccountState, req: &OrderRequest) -> RiskCheckResult;
@@ -78,7 +78,8 @@ impl RiskManager for RiskConfig {
         if req.stop_loss != 0.0 {
             let potential_loss_per_unit = match req.side {
                 Side::BUY => req.entry_price - req.stop_loss,
-                Side::SELL => req.stop_loss - req.entry_price
+                Side::SELL => req.stop_loss - req.entry_price,
+                Side::HOLD => 0.0
             };
             let total_potential_loss = potential_loss_per_unit * req.quantity;
             let drawdown_pct = (total_potential_loss / state.account_balance) * 100.0;
