@@ -64,8 +64,8 @@ async fn connect_websocket(base_url: &str, symbol: &str) -> Result<(), Box<dyn s
 }
 
 trait MarketStream {
-    async fn fetch_snapshot(&self) -> Result<DepthSnapshot, Box<dyn std::error::Error>>;
-    async fn fetch_update(&mut self) -> Result<DepthUpdate, Box<dyn std::error::Error>>;
+    async fn fetch_snapshot<'a>(&'a self) -> Result<DepthSnapshot, Box<dyn std::error::Error>>;
+    async fn fetch_update<'a>(&'a mut self) -> Result<DepthUpdate, Box<dyn std::error::Error>>;
     async fn emit_market_event(&mut self) -> Result<MarketEvent, Box<dyn std::error::Error>>;
 }
 

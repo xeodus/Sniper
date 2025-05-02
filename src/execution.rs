@@ -57,7 +57,7 @@ async fn prepare_signed_order<'a>(query_string: &'a HashMap<&'a str, String>) ->
     Ok(order_res)
 }
 
-async fn place_order(side: &Side, type_: &OrderType, symbol: &str, price: f64, quantity: f64, rec_window: f64) -> Side {
+pub async fn place_order(side: &Side, type_: &OrderType, symbol: &str, price: f64, quantity: f64, rec_window: f64) -> Side {
 
     let mut params = HashMap::new();
     params.insert("symbol", symbol.to_string());
@@ -69,20 +69,20 @@ async fn place_order(side: &Side, type_: &OrderType, symbol: &str, price: f64, q
     }
 
     params.insert("type", format!("{:?}", type_));
-    params.insert("recWindow", format!("{:?}", rec_window));
+    params.insert("recWindow", format!("{:.3}", rec_window));
     params.insert("timestamp", Utc::now().timestamp_millis().to_string());
 
     match prepare_signed_order(&params).await {
         Ok(order_res) => match order_res.status {
-            val if val == "ASK_FILLED".to_owned() => {
+            val if val == "ask filled".to_owned() => {
                 println!("Ask order filled: {}", order_res.order_id);
                 Side::BUY
             },
-            val if val == "BID_FILLED".to_owned() => {
+            val if val == "bid filled".to_owned() => {
                 println!("Bid order filled: {}", order_res.order_id);
                 Side::SELL
             },
-            val if val == "UNFILLED".to_owned() => {
+            val if val == "unfilled".to_owned() => {
                 println!("Order not filled yet: {}", order_res.order_id);
                 Side::HOLD
             },
