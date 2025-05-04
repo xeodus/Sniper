@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
-use Sniper_Bot::backtesting::run_backtest;
-use Sniper_Bot::{risk_manager::{AccountState, RiskConfig}, strategy::TradeState};
+use sniper_bot::backtesting::run_backtest;
+use sniper_bot::{risk_manager::{AccountState, RiskConfig}, strategy::TradeState};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

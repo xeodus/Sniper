@@ -34,7 +34,7 @@ fn generate_signature(secret_key: &str, data: &str) -> String {
     hex::encode(code_bytes)
 }
 
-async fn prepare_signed_order<'a>(query_string: &'a HashMap<&'a str, String>) -> Result<OrderResponse, Box<dyn std::error::Error>> {
+async fn prepare_signed_order(query_string: &HashMap<&str, String>) -> Result<OrderResponse, Box<dyn std::error::Error>> {
     // Generate signature
     let query_param = serde_urlencoded::to_string(query_string).unwrap();
     let secret_key = env::var("SECRET_KEY").expect("secret key not found!");
