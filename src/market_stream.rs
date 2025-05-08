@@ -47,7 +47,7 @@ pub struct WsDepthEvent {
 #[derive(Debug, Clone)]
 pub enum MarketEvent {
     Snapshot(DepthSnapshot),
-    Update(DepthUpdate),
+    Update(DepthUpdate)
 }
 
 pub trait MarketStream {
@@ -107,11 +107,11 @@ impl MarketStream for DataConfig {
                                         symbol: evt.s.clone(),
                                         bids: evt.b.into_iter().map(|x| OrderBookLevel {
                                             price: x[0] as f64,
-                                            quantity: x[0] as f64
+                                            quantity: x[1] as f64
                                         }).collect(),
                                         asks: evt.a.into_iter().map(|x| OrderBookLevel {
                                             price: x[0] as f64,
-                                            quantity: x[0] as f64
+                                            quantity: x[1] as f64
                                         }).collect(),
                                         first_updated_id: evt.u_,
                                         final_update_id: evt.u

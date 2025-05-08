@@ -11,7 +11,7 @@ pub struct AccountState {
     pub current_position: f64,
     pub max_position: f64,
     pub last_price: f64,
-    pub price: f64,
+    pub entry_price: f64,
     pub account_balance: f64,
     pub unrealised_pnl: f64
 }

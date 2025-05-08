@@ -1,12 +1,14 @@
 use std::collections::VecDeque;
 use serde::Deserialize;
 
+use crate::market_stream::OrderBookLevel;
+
 #[derive(Debug, Deserialize)]
 pub struct MarketData {
     pub price: f64,
     pub quantity: f64,
-    pub bids: Vec<(f64, f64)>,
-    pub asks: Vec<(f64, f64)>
+    pub bids: Vec<OrderBookLevel>,
+    pub asks: Vec<OrderBookLevel>
 }
 
 #[derive(PartialEq)]
@@ -71,10 +73,9 @@ impl StrategyManager for TradeState {
     }
 
     fn generate_signal(&mut self, market: &MarketData, depth: usize) -> Signal {
-        let bid_pressure = market.bids.iter().take(depth).map(|(p,q)| p * q).sum::<f64>();
-        let ask_pressure = market.asks.iter().take(depth).map(|(p, q)| p * q).sum::<f64>();
+        let bid_pressure = market.bids.iter().take(depth).map(|x| x.quantity).sum::<f64>();
+        let ask_pressure = market.asks.iter().take(depth).map(|x| x.quantity).sum::<f64>();
         let imbalance = (bid_pressure - ask_pressure) / (bid_pressure + ask_pressure);
-
         if imbalance > self.imbalance_threshold && market.price > self.ema_value {
             Signal::BUY
         }
