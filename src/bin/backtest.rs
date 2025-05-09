@@ -57,7 +57,7 @@ async fn main() -> io::Result<()> {
             last_updated_id: 1001
         })},
         MarketEvent::Update(update) => {
-            println!("Got a snapshot for Symbol: {}, New Order ID: {}, Bids: {:?}, Asks: {:?}", update.symbol, update.final_update_id, update.bids, update.asks);
+            println!("Got incremental update for Symbol: {}, New Order ID: {}, Bids: {:?}, Asks: {:?}", update.symbol, update.final_update_id, update.bids, update.asks);
             MarketEvent::Update(DepthUpdate {
             symbol: "BTCUSDT".into(),
             bids: vec![ OrderBookLevel {

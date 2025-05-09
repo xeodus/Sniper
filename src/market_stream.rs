@@ -9,7 +9,7 @@ pub struct DataConfig {
     pub rest_url: String,
     pub ws_url: String,
     pub symbol: String,
-    pub depth_levels: usize,
+    pub depth_levels: usize
 }
 
 #[derive(Debug, Deserialize, Clone)]
