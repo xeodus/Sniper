@@ -44,9 +44,9 @@ async fn prepare_signed_order(query_string: &HashMap<&str, String>) -> Result<Or
     let api_key = env::var("API_KEY").expect("API key not found!");
     let mut headers = HashMap::new();
     headers.insert("X-MBX-APIKEY", &api_key);
-    let url = "https://api.binance.com/api/v3/order";
+    let url = format!("https://api.binance.com/api/v3/order?{}", final_query_string);
     let client = Client::new();
-    let response = client.post(url).header("X-MBX-APIKEY", &api_key).body(final_query_string).send().await?;
+    let response = client.post(&url).header("X-MBX-APIKEY", &api_key).send().await?;
     let status_code = response.status();
     
     if !status_code.is_success() {
