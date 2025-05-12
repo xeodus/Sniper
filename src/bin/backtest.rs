@@ -92,7 +92,7 @@ async fn main() -> io::Result<()> {
         last_update_id: 1001
     };
 
-    match run_backtest("historical_data/market.csv", &mut state, &mut trade, &event, &mut risk_cfg, &mut ob) {
+    match run_backtest("/Users/fever_dreamer/Desktop/Rust/Sniper/data/historical_data.csv", &mut state, &mut trade, &event, &mut risk_cfg, &mut ob) {
         Ok(()) => println!("Backtest ran successfully!"),
         Err(e) => eprintln!("Error occured in backtest: {}", e)
     }

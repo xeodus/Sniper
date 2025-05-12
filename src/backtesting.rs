@@ -5,29 +5,42 @@ use crate::{execution::Side, market_stream::{DepthSnapshot, DepthUpdate, MarketE
 #[derive(Debug, Deserialize)]
 struct CsvLoader {
     symbol: String,
-    bids: Vec<OrderBookLevel>,
-    asks: Vec<OrderBookLevel>,
     update_id: u64
 }
 
+fn parse_levels(s: &str) -> Result<Vec<OrderBookLevel>, Box<dyn std::error::Error>> {
+    let mut levels = Vec::new();
+    let clean = s.replace(['[',']'], "");
+
+    for pair in clean.split(',') {
+        let mut parts = pair.split(':');
+        let price = parts.next().ok_or("Missing price")?.trim().parse()?;
+        let quantity = parts.next().ok_or("Missing quantity")?.trim().parse()?;
+        levels.push(OrderBookLevel { price, quantity});
+    }
+    Ok(levels)
+}
+
 fn load_csv(path: &str, event: &MarketEvent) -> Result<Vec<MarketEvent>, Box<dyn std::error::Error>> {
-    let mut reader = Reader::from_path(path)?;
+    let reader = Reader::from_path(path)?;
     let mut data = Vec::new();
-    for line in reader.deserialize() {
-        let csv_:CsvLoader = line.expect("Cannot read the parsed line..");
+    for line in reader.into_deserialize() {
+        let csv_:CsvLoader = line?;
+        let bids = parse_levels(path)?;
+        let asks = parse_levels(path)?;
         let evt = match event {
             MarketEvent::Snapshot(_) => MarketEvent::Snapshot(DepthSnapshot {
                 symbol: csv_.symbol,
-                bids: csv_.bids,
-                asks: csv_.asks,
+                bids,
+                asks,
                 last_updated_id: csv_.update_id
             }),
             MarketEvent::Update(_) => MarketEvent::Update(DepthUpdate {
                 symbol: csv_.symbol,
-                bids: csv_.bids,
-                asks: csv_.asks,
+                bids,
+                asks,
                 first_updated_id: 0,
-                final_update_id: csv_.update_id
+                final_update_id: csv_.update_id + 1
             })
         };
         data.push(evt);
