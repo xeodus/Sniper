@@ -1,11 +1,15 @@
-use futures_util::{stream::BoxStream, SinkExt, StreamExt, TryFutureExt, TryStreamExt};
+use std::time::Duration;
+
+use futures_util::{stream::BoxStream, SinkExt, StreamExt, TryStreamExt};
 use reqwest::Client;
 use serde::Deserialize;
-use tokio::sync::broadcast;
+use tokio::{sync::broadcast, time::sleep};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tokio_stream::wrappers::BroadcastStream;
 
 pub struct DataConfig {
+    pub api_key: String,
+    pub secret_key: String,
     pub rest_url: String,
     pub ws_url: String,
     pub symbol: String,
@@ -37,11 +41,11 @@ pub struct DepthUpdate {
 
 #[derive(serde::Deserialize)]
 pub struct WsDepthEvent {
-    pub s: String,
-    pub u: u64,
-    pub u_: u64,
-    pub a: Vec<[f64; 2]>,
-    pub b: Vec<[f64; 2]>
+    pub symbol: String,
+    pub first_update_id: u64,
+    pub final_update_id: u64,
+    pub bids: Vec<OrderBookLevel>,
+    pub asks: Vec<OrderBookLevel>
 }
 
 #[derive(Debug, Clone)]
@@ -55,6 +59,7 @@ pub trait MarketStream {
 }
 
 impl MarketStream for DataConfig {
+
     fn stream(&self) -> BoxStream<'static, Result<MarketEvent, Box<dyn std::error::Error + Send + Sync>>> {
         let rest_url = self.rest_url.clone();
         let ws_url = self.ws_url.clone();
@@ -63,16 +68,27 @@ impl MarketStream for DataConfig {
         let (tx, rx) = broadcast::channel::<MarketEvent>(20);
 
         tokio::spawn(async move {
+            let mut retry_interval = Duration::from_secs(20);
+            let max_retry_interval = 5;
+            let mut attempt = 0;
             loop {
+
                 // Fetch initial snapshot
-                let snap: DepthSnapshot = match Client::new().get(format!("{}/depth&symbol={}&limit={}", rest_url, symbol, level))
+                let snap: DepthSnapshot = match Client::new().get(format!("{}/api/v3/depth?symbol={}&limit={}", rest_url, symbol, level))
                 .send()
-                .and_then(|r| r.json())
                 .await {
-                    Ok(signal) => signal,
+                    Ok(signal) => match signal.json().await {
+                        Ok(r) => r,
+                        Err(e) => {
+                            eprintln!("Cannot fetch json resposne: {}", e);
+                            sleep(retry_interval).await;
+                            break;
+                        }
+                    },
                     Err(e) => {
-                        eprintln!("Cannot fetch json resposne: {}", e);
-                        continue;
+                        eprintln!("Cannot get a snapshot, error in response: {}", e);
+                        sleep(retry_interval).await;
+                        break;
                     }
                 };
                 let mut last_updated_id = snap.last_updated_id;
@@ -85,7 +101,7 @@ impl MarketStream for DataConfig {
                     Ok(stream) => stream,
                     Err(e) => {
                         eprintln!("Ws connection error: {}", e);
-                        continue;
+                        break;
                     }
                 };
                 let (mut write, mut read) = ws_stream.split();
@@ -98,24 +114,23 @@ impl MarketStream for DataConfig {
                         Ok(Message::Text(txt)) => {
                             // parse JSON to struct
                             if let Ok(evt) = serde_json::from_str::<WsDepthEvent>(&txt) {
-                                if evt.u_ <= last_updated_id {
+                                if evt.first_update_id <= last_updated_id {
                                     continue;
                                 }
-                                if evt.u <= last_updated_id + 1 {
-                                    last_updated_id = evt.u_;
+                                if last_updated_id + 1 <= evt.final_update_id {
+                                    last_updated_id = evt.final_update_id;
                                     let update = DepthUpdate {
-                                        symbol: evt.s.clone(),
-                                        bids: evt.b.into_iter().map(|x| OrderBookLevel {
-                                            price: x[0] as f64,
-                                            quantity: x[1] as f64
-                                        }).collect(),
-                                        asks: evt.a.into_iter().map(|x| OrderBookLevel {
-                                            price: x[0] as f64,
-                                            quantity: x[1] as f64
-                                        }).collect(),
-                                        first_updated_id: evt.u_,
-                                        final_update_id: evt.u
+                                        symbol: evt.symbol.clone(),
+                                        bids: Vec::with_capacity(100),
+                                        asks: Vec::with_capacity(100),
+                                        first_updated_id: evt.first_update_id,
+                                        final_update_id: evt.final_update_id
                                     };
+                                    
+                                    if evt.first_update_id > last_updated_id + 1 {
+                                        break;
+                                    }
+
                                     let _ = tx.send(MarketEvent::Update(update));
                                 }
                             }
@@ -127,6 +142,13 @@ impl MarketStream for DataConfig {
                         Err(e) => eprintln!("WS Error: {}", e)
                     }
                 }
+                attempt += 1;
+                if attempt > max_retry_interval {
+                    eprintln!("Connection attempt exceeded the maximum limit");
+                    break;
+                }
+                sleep(retry_interval).await;
+                retry_interval = (retry_interval * 2).min(Duration::from_secs(20));
             }
         });
 
