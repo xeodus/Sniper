@@ -17,24 +17,18 @@ pub struct DataConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct OrderBookLevel {
-    pub price: f64,
-    pub quantity: f64
-}
-
-#[derive(Debug, Deserialize, Clone)]
 pub struct DepthSnapshot {
     pub symbol: String,
-    pub bids: Vec<OrderBookLevel>,
-    pub asks: Vec<OrderBookLevel>,
+    pub bids: Vec<[f64; 2]>,
+    pub asks: Vec<[f64; 2]>,
     pub last_updated_id: u64
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct DepthUpdate {
     pub symbol: String,
-    pub bids: Vec<OrderBookLevel>,
-    pub asks: Vec<OrderBookLevel>,
+    pub bids: Vec<[f64; 2]>,
+    pub asks: Vec<[f64; 2]>,
     pub first_updated_id: u64,
     pub final_update_id: u64
 }
@@ -44,8 +38,8 @@ pub struct WsDepthEvent {
     pub symbol: String,
     pub first_update_id: u64,
     pub final_update_id: u64,
-    pub bids: Vec<OrderBookLevel>,
-    pub asks: Vec<OrderBookLevel>
+    pub bids: Vec<[f64; 2]>,
+    pub asks: Vec<[f64; 2]>
 }
 
 #[derive(Debug, Clone)]

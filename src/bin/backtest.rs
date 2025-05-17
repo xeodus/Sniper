@@ -3,7 +3,7 @@ use std::env;
 use std::time::Duration;
 use futures_util::StreamExt;
 use sniper_bot::execution::{place_order, OrderType, Side};
-use sniper_bot::market_stream::{DataConfig, MarketEvent, MarketStream, OrderBookLevel};
+use sniper_bot::market_stream::{DataConfig, MarketEvent, MarketStream};
 use sniper_bot::orderbook::{OrderBook, OrderBookManager};
 use sniper_bot::risk_manager::{OrderRequest, RiskConfig, RiskManager};
 use sniper_bot::strategy::{MarketData, Signal, StrategyManager};
@@ -67,14 +67,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let md = MarketData {
         price: (ob.best_bid() + ob.best_ask()) / 2.0,
         quantity: 0.0,
-        bids: vec![OrderBookLevel {
-            price: 0.0,
-            quantity: 0.0
-        }],
-        asks: vec![OrderBookLevel {
-            price: 0.0,
-            quantity: 0.0
-        }]
+        bids: Vec::with_capacity(20),
+        asks: Vec::with_capacity(20)
     };
 
     println!("Waiting for order book data..");
