@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use futures_util::{stream::BoxStream, SinkExt, StreamExt, TryStreamExt};
-use reqwest::Client;
+use reqwest::{Client, Proxy};
 use serde::Deserialize;
 use tokio::{sync::broadcast, time::sleep};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
@@ -83,11 +83,15 @@ impl MarketStream for DataConfig {
             let mut retry_interval = Duration::from_secs(20);
             let max_retry_interval = 5;
             let mut attempt = 0;
-            loop {
 
+            loop {
+                // Client builder
+                let client = Client::builder().proxy(Proxy::http("http://proxy.binance.com:8080").expect("Error proxy server..")).build();
                 // Fetch initial snapshot
-                let raw_snap: RawDepthSnapshot = match Client::new()
+                let raw_snap: RawDepthSnapshot = match client
+                .unwrap()
                 .get(format!("{}/api/v3/depth?symbol={}&limit={}", rest_url, symbol, level))
+                .timeout(Duration::from_secs(10))
                 .send()
                 .await {
                     Ok(signal) => match signal.json::<RawDepthSnapshot>().await {
@@ -114,9 +118,9 @@ impl MarketStream for DataConfig {
 
                 let mut last_updated_id = snap.last_updated_id;
                 let _ = tx.send(MarketEvent::Snapshot(snap.clone()));
-
+                let ws_base_url = ws_url.trim_end_matches('/').replace("wss://", "ws://");
                 // Connect to web socket for incremental updates
-                let end_point = format!("{}/ws/{}@depth@100ms", ws_url, symbol.to_lowercase());
+                let end_point = format!("{}/ws/{}@depth@100ms", ws_base_url, symbol.to_lowercase());
                 // Connection
                 let (ws_stream, _) = match connect_async(&end_point).await {
                     Ok(stream) => stream,

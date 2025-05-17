@@ -18,7 +18,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_config = DataConfig {
         api_key: env::var("API_KEY").expect("API key is not set!"),
         secret_key: env::var("SECRET_KEY").expect("secret key is not set!"),
-        rest_url: "https://api.binance.com".into(),
+        rest_url: "https://binance.com".into(),
         ws_url: "wss://stream.binance.com:9443".into(),
         symbol: "BTCUSDT".into(),
         depth_levels: 15
