@@ -5,7 +5,7 @@ use futures_util::StreamExt;
 use sniper_bot::execution::{place_order, OrderType, Side};
 use sniper_bot::market_stream::{DataConfig, MarketEvent, MarketStream};
 use sniper_bot::orderbook::{OrderBook, OrderBookManager};
-use sniper_bot::risk_manager::{OrderRequest, RiskConfig, RiskManager};
+use sniper_bot::risk_manager::{OrderRequest, RiskManager};
 use sniper_bot::strategy::{MarketData, Signal, StrategyManager};
 use sniper_bot::{risk_manager::AccountState, strategy::TradeState};
 use tokio::time::sleep;
@@ -19,7 +19,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_key: env::var("API_KEY").expect("API key is not set!"),
         secret_key: env::var("SECRET_KEY").expect("secret key is not set!"),
         rest_url: "https://binance.com".into(),
-        ws_url: "wss://stream.binance.com:9443".into(),
+        ws_url: "wss://stream.binance.com:9443/ws".into(),
         symbol: "BTCUSDT".into(),
         depth_levels: 15
     };
@@ -50,12 +50,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         unrealised_pnl: 1.24
     };
 
-    let risk_cfg = RiskConfig {
+    /*let risk_cfg = RiskConfig {
         max_drawdown_pct: 0.20,
         max_position_pct: 0.02,
         warn_position_pct: 0.04,
         max_potential_loss: 0.02
-    };
+    };*/
 
     let req = OrderRequest {
         entry_price: 0.0,
@@ -80,8 +80,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(event) => {
                 match event {
                     MarketEvent::Snapshot(snapshot) => {
-                        println!("Received order book snapshot for: {} for levels: {}",
-                        snapshot.last_updated_id, snapshot.bids.len() + snapshot.asks.len());
+                        println!("Received order book snapshot of bid: {:?}, ask: {:?} for order: {}",
+                        snapshot.bids, snapshot.asks, snapshot.last_updated_id);
                         ob.apply_snapshots(&snapshot);
                         snapshot_received = true;
                         if !snapshot_received {
@@ -89,8 +89,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     },
                     MarketEvent::Update(update) => {
-                        println!("Received incremental order book update for: {} for levels: {}",
-                        update.final_update_id, update.bids.len() + update.asks.len());
+                        println!("Received incremental order book update of bid: {:?}, ask: {:?} for order: {}",
+                        update.bids, update.asks, update.final_update_id);
                         let updated = ob.apply_updates(&update);
                         if !updated {
                             println!("Didn't receive incremental update, waiting for next snapshot..");
@@ -112,15 +112,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let stop_loss_triggered = state.check_stop_loss(md.price, trade.stop_loss);
         if stop_loss_triggered && state.current_position != 0.0 {
             println!("Stop loss triggered at price: {}", md.price);
-            let close_side = if state.current_position > 0.0 {
+            let close_side = if state.current_position > state.max_position {
                 Side::SELL
             }
             else {
                 Side::BUY
             };
+
             println!("Closing position for side: {:?}, quantity: {:.6} @ {:.6}", close_side, req.quantity, md.price);
 
-            let close_quantity = state.current_position.abs();
+            let close_position = state.current_position.abs();
             let exe = place_order(
                 &req.side,
                 &OrderType::MARKET,
@@ -134,8 +135,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("Cannot place order..");
             }
             else {
-                let _update_position = state.update_position(close_quantity, md.price);
-                println!("Position closed at price: {}", md.price);
+                println!("Position closed at price: {} for position: {}", md.price, close_position);
             }
             continue;
         }
@@ -144,15 +144,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let signal = trade.generate_signal(&md, data_config.depth_levels);
 
         match signal {
-            Signal::BUY if  state.current_position <= 0.0 => {
-                let quantity = state.calculate_position_size(md.price, risk_cfg.max_position_pct);
+            Signal::BUY if  state.current_position < state.max_position => {
+                let position_size = (state.max_position - state.current_position).min(md.quantity);
 
-                if quantity > 0.0 {
-                    println!("Buy signal for price: {}, ema: {} and quantity: {}", md.price, ema, md.quantity);
+                if position_size > 0.0 {
+                    println!("Buy signal for price: {}, ema: {} and position: {}", md.price, ema, position_size);
                 }
 
                 let exe = place_order(
-                    &req.side,
+                    &Side::BUY,
                     &OrderType::MARKET,
                     &data_config.symbol,
                     md.price,
@@ -161,19 +161,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 );
 
                 if let Side::BUY = exe.await {
-                    state.update_position(quantity, md.price);
+                    state.current_position += position_size;
                     trade.entry_price = md.price;
-                    println!("Buy order executed!");
+                    println!("Buy order executed for position: {}", state.current_position);
                 }
             },
             Signal::SELL if state.current_position > 0.0 => {
-                let quantity = state.calculate_position_size(md.price, risk_cfg.max_position_pct);
+                println!("Sell signal executed for price: {}, ema: {}, and position: {}", md.price, ema, state.current_position);
 
-                if quantity > 0.0 {
-                    println!("Sell signal for price: {}, ema: {} and quantity: {}", md.price, ema, md.quantity);
-                }
-
-                let exe = place_order(&req.side,
+                let exe = place_order(
+                    &Side::SELL,
                     &OrderType::LIMIT,
                     &data_config.symbol,
                     md.price,
@@ -182,13 +179,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 );
 
                 if let Side::SELL = exe.await {
-                    state.update_position(-quantity, md.price);
-                    trade.entry_price = md.price;
-                    println!("Sell order executed");
+                    let pnl = (md.price - trade.entry_price) / state.current_position;
+                    println!("Sell order executed at price: {} and the realised PnL is: {}", md.price, pnl);
+                    state.current_position = 0.0;
                 }
             },
             Signal::HOLD => {
-                if state.current_position != 0.0 {
+                let exe = place_order(
+                    &req.side,
+                    &OrderType::MARKET,
+                    &data_config.symbol,
+                    md.price,
+                    md.quantity,
+                    5000.0
+                ).await;
+                
+                if state.current_position != 0.0 && matches!(exe, Side::HOLD) {
                     println!("Order on hold waiting for appropriate signal:
                     - price: {:.2}
                     - ema: {:.2}

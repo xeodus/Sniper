@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use serde::Deserialize;
 
+
 #[derive(Debug, Deserialize)]
 pub struct MarketData {
     pub price: f64,
@@ -86,3 +87,62 @@ impl StrategyManager for TradeState {
         
     }
 }
+
+/*pub async fn execute_strategy(
+    symbol: &str,
+    trade: &mut TradeState,
+    state: &mut AccountState,
+    md: &MarketData
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        trade.update_indicators(&md);
+        let signal = trade.generate_signal(&md, trade.order_book_depth);
+
+        match signal {
+            Signal::BUY => {
+                if state.current_position < state.max_position {
+                    let position_size = (state.max_position - state.current_position).min(md.quantity);
+
+                    if position_size > 0.0 {
+                        println!("Buy signal received at price: {}", md.price);
+                    }
+
+                    let result = place_order(
+                        &Side::BUY,
+                        &OrderType::MARKET,
+                        symbol,
+                        md.price,
+                        md.quantity,
+                        5000.0
+                    ).await;
+
+                    if matches!(result, Side::BUY) {
+                        state.current_position += position_size;
+                        trade.entry_price = md.price;
+                        println!("Position incresed to: {}", state.current_position);
+                    }
+                }
+            },
+            Signal::SELL => {
+                if state.current_position > 0.0 {
+                    println!("Sell signal received at price: {}", md.price);
+                }
+
+                let result = place_order(
+                    &Side::BUY,
+                    &OrderType::LIMIT,
+                    symbol,
+                    md.price,
+                    md.quantity,
+                    5000.0
+                ).await;
+
+                if matches!(result, Side::SELL) {
+                    let pnl = (md.price - trade.entry_price) / state.current_position;
+                    println!("Closing position with realised PnL: {}", pnl);
+                    state.current_position = 0.0;
+                }
+            },
+            Signal::HOLD => {}
+        }
+        Ok(())
+}*/

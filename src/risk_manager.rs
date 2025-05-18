@@ -24,35 +24,13 @@ pub struct RiskConfig {
 }
 
 pub trait RiskManager {
-    fn calculate_position_size(&self, price: f64, risk_pct: f64) -> f64;
-    fn update_position(&mut self, filled_quantity: f64, filled_price: f64);
+    /*fn calculate_position_size(&self, price: f64, risk_pct: f64) -> f64;
+    fn update_position(&mut self, filled_quantity: f64, filled_price: f64);*/
     fn check_stop_loss(&mut self, current_price: f64, stop_loss_pct: f64) -> bool;
     fn update_unrealised_pnl(&mut self, current_price: f64);
 }
 
 impl RiskManager for AccountState {
-    fn calculate_position_size(&self, price: f64, risk_pct: f64) -> f64 {
-        let risk_amount = self.account_balance * risk_pct;
-        let position_size = risk_amount / price;
-        position_size.min(self.max_position - self.current_position)
-    }
-
-    fn update_position(&mut self, filled_quantity: f64, filled_price: f64) {
-        if self.current_position == 0.0 {
-            self.entry_price = filled_price;
-            self.current_position = filled_quantity;
-        }
-        else {
-            let new_position = self.current_position + filled_quantity;
-
-            if new_position > 0.0 && filled_quantity > 0.0 {
-                self.entry_price = (self.entry_price * self.current_position + filled_price * filled_quantity) / new_position;
-            }
-            else {
-                self.current_position = new_position;
-            }
-        }
-    }
 
     fn check_stop_loss(&mut self, current_price: f64, stop_loss_pct: f64) -> bool {
         if self.current_position > 0.0 {

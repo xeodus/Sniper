@@ -1,4 +1,4 @@
-use std::{env, collections::HashMap};
+use std::{collections::HashMap, env, time::Duration};
 use chrono::Utc;
 use hmac::{Hmac, Mac};
 use reqwest::Client;
@@ -37,6 +37,7 @@ fn generate_signature(secret_key: &str, data: &str) -> String {
 async fn prepare_signed_order(query_string: &HashMap<&str, String>) -> Result<OrderResponse, Box<dyn std::error::Error>> {
     // Generate signature
     let query_param = serde_urlencoded::to_string(query_string).unwrap();
+    dotenv::dotenv().ok();
     let secret_key = env::var("SECRET_KEY").expect("secret key not found!");
     let signature = generate_signature(&secret_key, &query_param);
     // Generate request
@@ -45,7 +46,7 @@ async fn prepare_signed_order(query_string: &HashMap<&str, String>) -> Result<Or
     let mut headers = HashMap::new();
     headers.insert("X-MBX-APIKEY", &api_key);
     let url = format!("https://api.binance.com/api/v3/order?{}", final_query_string);
-    let client = Client::new();
+    let client = Client::builder().timeout(Duration::from_secs(10)).build()?;
     let response = client.post(&url).header("X-MBX-APIKEY", &api_key).send().await?;
     let status_code = response.status();
     
@@ -58,42 +59,68 @@ async fn prepare_signed_order(query_string: &HashMap<&str, String>) -> Result<Or
 }
 
 pub async fn place_order(side: &Side, type_: &OrderType, symbol: &str, price: f64, quantity: f64, rec_window: f64) -> Side {
+    let mut attempt = 0;
+    let max_attempt = 5;
+
+    if let Side::HOLD = side {
+        println!("Cannot place the order, on HOLD");
+        return Side::HOLD;
+    }
 
     let mut params = HashMap::new();
     params.insert("symbol", symbol.to_string());
-    params.insert("quantity", format!("{:.8}", quantity));
-    params.insert("side", format!("{:?}", side));
+    params.insert("quantity", format!("{:.6}", quantity));
+
+    let side_str = match side {
+        Side::BUY => "BUY",
+        Side::SELL => "SELL",
+        _ => "BUY"
+    };
+    params.insert("side", format!("{:?}", side_str.to_string()));
     
     if matches!(type_, OrderType::LIMIT) {
-        params.insert("price", format!("{:.8}", price));
+        params.insert("price", format!("{:.3}", price));
     }
 
-    params.insert("type", format!("{:?}", type_));
-    params.insert("recWindow", format!("{:.3}", rec_window));
+    let type_str = match type_ {
+        OrderType::LIMIT => "LIMIT",
+        OrderType::MARKET => "MARKET"
+    };
+
+    params.insert("type", format!("{:?}", type_str.to_string()));
+    params.insert("recvWindow", format!("{}", rec_window as u64));
     params.insert("timestamp", Utc::now().timestamp_millis().to_string());
 
     match prepare_signed_order(&params).await {
-        Ok(order_res) => match order_res.status {
-            val if val == "ask filled".to_owned() => {
+        Ok(order_res) => match order_res.status.as_str() {
+            "ASK_FILLED" => {
                 println!("Ask order filled: {}", order_res.order_id);
                 Side::BUY
             },
-            val if val == "bid filled".to_owned() => {
+            "BID_FILLED" => {
                 println!("Bid order filled: {}", order_res.order_id);
                 Side::SELL
             },
-            val if val == "unfilled".to_owned() => {
+            "UNFILLED" => {
                 println!("Order not filled yet: {}", order_res.order_id);
                 Side::HOLD
             },
             _ => {
-                eprintln!("Error string cases..");
+                println!("Unexpected status: {}", order_res.status);
                 Side::HOLD
-            }       
+            }
         },
         Err(e) => {
             eprintln!("Error filling the order: {}", e);
-            Side::HOLD
+            if attempt > max_attempt {
+                println!("Maximun attempts exceeded..");
+                return Side::HOLD;
+            }
+            else {
+                attempt += 1;
+                println!("Attempts made so far: {} out of {}", attempt, max_attempt);
+                return Side::HOLD;
+            }
         }
     }
 }

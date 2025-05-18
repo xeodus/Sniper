@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use futures_util::{stream::BoxStream, SinkExt, StreamExt, TryStreamExt};
-use reqwest::{Client, Proxy};
+use reqwest::Client;
 use serde::Deserialize;
 use tokio::{sync::broadcast, time::sleep};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
@@ -80,18 +80,18 @@ impl MarketStream for DataConfig {
         let (tx, rx) = broadcast::channel::<MarketEvent>(20);
 
         tokio::spawn(async move {
-            let mut retry_interval = Duration::from_secs(20);
-            let max_retry_interval = 5;
+            let mut retry_interval = Duration::from_secs(5);
+            let max_retry_attempt = 5;
             let mut attempt = 0;
 
             loop {
                 // Client builder
-                let client = Client::builder().proxy(Proxy::http("http://proxy.binance.com:8080").expect("Error proxy server..")).build();
+                let client = Client::builder().timeout(Duration::from_secs(30)).build();
                 // Fetch initial snapshot
                 let raw_snap: RawDepthSnapshot = match client
                 .unwrap()
                 .get(format!("{}/api/v3/depth?symbol={}&limit={}", rest_url, symbol, level))
-                .timeout(Duration::from_secs(10))
+                .timeout(Duration::from_secs(30))
                 .send()
                 .await {
                     Ok(signal) => match signal.json::<RawDepthSnapshot>().await {
@@ -118,21 +118,25 @@ impl MarketStream for DataConfig {
 
                 let mut last_updated_id = snap.last_updated_id;
                 let _ = tx.send(MarketEvent::Snapshot(snap.clone()));
-                let ws_base_url = ws_url.trim_end_matches('/').replace("wss://", "ws://");
+                let stream_name = format!("{}@depth@100ms", symbol.to_lowercase());
+                // let _ws_base_url = ws_url.trim_end_matches('/').replace("wss://", "ws://");
                 // Connect to web socket for incremental updates
-                let end_point = format!("{}/ws/{}@depth@100ms", ws_base_url, symbol.to_lowercase());
+                let ws_end_point = format!("{}/ws", ws_url.trim_end_matches('/'));
                 // Connection
-                let (ws_stream, _) = match connect_async(&end_point).await {
+                let (ws_stream, _) = match connect_async(ws_end_point).await {
                     Ok(stream) => stream,
                     Err(e) => {
                         eprintln!("Ws connection error: {}", e);
                         sleep(retry_interval).await;
+                        if attempt > max_retry_attempt {
+                            println!("Maximum attempt to connect WS exceeded..");
+                        }
                         break;
                     }
                 };
                 let (mut write, mut read) = ws_stream.split();
                 // Subscribe
-                let subs = serde_json::json!({"method":"SUBSCRIBE", "params":[format!("{}@depth@100ms", symbol.to_lowercase())], "id":1});
+                let subs = serde_json::json!({"method":"SUBSCRIBE", "params":[stream_name], "id":1});
                 let _ = write.send(Message::Text(subs.to_string())).await;
                 // Enter the loop
                 while let Some(msg) = read.next().await {
@@ -165,11 +169,18 @@ impl MarketStream for DataConfig {
                             let _ = write.send(Message::Pong(vec![])).await;
                         },
                         Ok(_) => {},
-                        Err(e) => eprintln!("WS Error: {}", e)
+                        Err(e) => {
+                            eprintln!("WS Error: {}", e);
+                            attempt += 1;
+                            if attempt > max_retry_attempt {
+                                println!("Maximum attempts exceeded..");
+                                break;
+                            }
+                        }
                     }
                 }
                 attempt += 1;
-                if attempt > max_retry_interval {
+                if attempt > max_retry_attempt {
                     eprintln!("Connection attempt exceeded the maximum limit");
                     break;
                 }
