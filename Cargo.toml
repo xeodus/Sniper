@@ -8,7 +8,7 @@ edition = "2021"
 tokio = {version = "1.0", features = ["full"]}  #Async runtime
 tokio-tungstenite = { version = "0.19", features = ["native-tls"] }
 tokio-stream = {version = "0.1", features = ["sync"]}
-reqwest = {version = "0.11", features = ["json"]}
+reqwest = {version = "0.12", features = ["json"]}
 serde = {version = "1.0", features = ["derive"]}
 serde_json = "1.0"  #JSON parsing
 serde_urlencoded = "0.7"
@@ -17,5 +17,7 @@ sha2 = "0.10"
 hmac = "0.12"
 hex = "0.4"
 log = "0.4"
+base64 = "0.21"
+anyhow = "1.0"
 chrono = "0.4"  #Timestamp handling
 dotenv = "0.15.0" #Includes .env file for sensitive data handling
