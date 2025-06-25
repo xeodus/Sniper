@@ -1,4 +1,4 @@
-use std::{collections::{hash_set::SymmetricDifference, HashMap}, env, fs, path::{Path, PathBuf}, time::{self, Duration, SystemTime, UNIX_EPOCH}};
+use std::{collections::{hash_set::SymmetricDifference, BTreeMap, HashMap}, env, fs, path::{Path, PathBuf}, time::{self, Duration, SystemTime, UNIX_EPOCH}};
 use hmac::{Hmac, Mac};
 use reqwest::{header::{HeaderMap, HeaderValue, CONTENT_TYPE}, Client};
 use sha2::Sha256;
@@ -686,4 +686,378 @@ async fn fetch_and_save_historical_data(
     Ok(data)
 }
 
-fn calculate_sma()
+// Strategy
+
+fn calculate_sma(prices: &Vec<f64>, period: usize) -> Vec<f64> {
+    let mut sma_values = Vec::new();
+
+    for i in 0.. (prices.len() - period) {
+        let windows = prices[..i + period].iter().sum::<f64>() / period as f64;
+        sma_values.push(windows);
+    }
+    sma_values
+}
+
+fn calculate_ema(prices: &Vec<f64>, period: usize) -> Vec<f64> {
+    let multiplier = 2.0 / (period + 1) as f64;
+    let mut ema_values = Vec::new();
+    let first_sma = prices[..period].iter().sum::<f64>() / period as f64;
+    ema_values.push(first_sma);
+
+    for i in period.. prices.len() {
+        let prev_ema = ema_values.last().unwrap();
+        let ema = (prices[i] - prev_ema) * multiplier + prev_ema;
+        ema_values.push(ema);
+    }
+    ema_values
+} 
+
+fn calculate_rsi(prices: Vec<f64>, period: usize) -> Vec<f64> {
+    let changes: Vec<f64> = (1.. prices.len())
+    .map(|i| (prices[i] - prices[i - 1]) as f64)
+    .collect();
+
+    let mut gains: Vec<f64> = changes.iter()
+    .map(|&change| if change > 0.0 {change} else {0.0})
+    .collect();
+
+    let mut losses: Vec<f64> = changes
+    .iter().map(|&change| if change > 0.0 {change} else {0.0})
+    .collect();
+
+    let mut rsi_values = Vec::new();
+
+    for i in (period - 1).. prices.len() {
+        let avg_gain = gains.split_off(i - period + 1).iter().sum::<f64>() / period as f64;
+        let avg_loss = losses.split_off(i - period + 1).iter().sum::<f64>() / period as f64;
+
+        if avg_loss == 0.0 {
+            let _rsi = 100;
+        }
+        else {
+            let rs = avg_gain / avg_loss;
+            let rsi = 100.0 - (100.0 / (1.0 + rs));
+            rsi_values.push(rsi);
+        }
+    }
+    rsi_values
+}
+
+fn calculate_macd(prices: Vec<f64>, fast_period: usize, slow_period: usize, signal_period: usize) -> BTreeMap<String, Vec<f64>> {
+    let fast_ema = calculate_ema(&prices, fast_period);
+    let slow_ema = calculate_ema(&prices, slow_period);
+
+    let start_idx = fast_period - slow_period;
+    let macd_line: Vec<f64> = (1.. slow_ema.len()).map(|i| fast_ema[i + start_idx] - slow_ema[i]).collect();
+    let signal_line = calculate_ema(&prices, signal_period);
+
+    let histogram: Vec<f64> = (1.. signal_line.len())
+    .map(|i| macd_line[i + macd_line.len() - signal_line.len()] - signal_line[i])
+    .collect();
+
+    let mut map = BTreeMap::new();
+    map.insert("macd_line".to_string(), macd_line);
+    map.insert("signal".to_string(), signal_line);
+    map.insert("histogram".to_string(), histogram);
+    map
+}
+
+fn set_bollinger_bands(prices: Vec<f64>, period: usize, std_multiplier: f64) -> BTreeMap<String, Vec<f64>> {
+    let sma = calculate_sma(&prices, period);
+    let upper = Vec::new();
+    let lower = Vec::new();
+    let mut bands = BTreeMap::new();
+    bands.insert("middle".to_string(), sma.clone());
+    bands.insert("upper".to_string(), upper);
+    bands.insert("lower".to_string(), lower);
+
+    for i in (period - 1).. prices.len() {
+        let windows = &prices[.. i + period];
+        let std_dev: Vec<f64> = windows.iter().map(|x| (x - sma[i - period + 1]).powi(2) as f64).collect();
+        let std_dev_sum = std_dev.iter().sum::<f64>();
+        let upper_value = vec![&sma[i - period + 1] + (std_dev_sum * std_multiplier)];
+        let lower_value = vec![&sma[i - period + 1] - (std_dev_sum * std_multiplier)];
+
+        bands.get("upper").insert(&upper_value);
+        bands.get("lower").insert(&lower_value);
+    }
+    bands
+}
+
+// Risk Management
+
+struct PositionSizer {
+    account_balance: f64,
+    risk_per_trade: f64
+}
+
+impl PositionSizer {
+    fn init(account_balance: f64, risk_per_trade: f64) -> Self {
+        Self {
+            account_balance,
+            risk_per_trade
+        }
+    }
+
+    fn calculate_position_size(&self, entry_price: f64, stop_loss: f64) -> f64 {
+        let risk_amount = self.account_balance * self.risk_per_trade;
+        let stop_distance = (entry_price - stop_loss).abs();
+
+        if stop_distance == 0.0 {
+            return 0.0;
+        }
+
+        let position_size = risk_amount / stop_distance;
+
+        return position_size.min(self.account_balance * 0.1);
+    }
+}
+
+struct PortfolioRiskManager {
+    max_portfolio_risk: f64,
+    max_drawdown: f64,
+    peak_balance: f64
+}
+
+impl PortfolioRiskManager {
+    fn init(max_portfolio_risk: f64, max_drawdown: f64, peak_balance: f64) -> Self {
+        Self {
+            max_portfolio_risk,
+            max_drawdown,
+            peak_balance
+        }
+    }
+
+    fn check_portfolio_risk(&self, positions: &[OrderPosition], account_balance: f64) -> bool {
+        let margin: Vec<f64> = positions.iter().map(|pos| pos.margin).collect();
+        let total_margin = margin.iter().sum::<f64>();
+        let portfolio_risk = total_margin / account_balance;
+        return portfolio_risk <= self.max_portfolio_risk;
+    }
+
+    fn check_drawdown(&mut self, current_balance: f64) -> bool {
+        self.peak_balance = self.peak_balance.max(current_balance);
+
+        if self.peak_balance == 0.0 {
+            return true;
+        }
+
+        let drawdown = (self.peak_balance - current_balance) / self.peak_balance;
+        return drawdown <= self.max_drawdown;
+    }
+}
+
+// Trading Stategy Framework
+
+trait TradingStrategy {
+    fn new(&self, symbol: String, timeframe: String) -> Self where Self: Sized;
+    fn analyze_market(&mut self, candles: &mut [CandleSticks]);
+    fn should_enter_short(&self) -> bool;
+    fn should_enter_long(&self) -> bool;
+    fn should_exit_position(&self, positions: &OrderPosition) -> bool;
+    fn get_stop_loss(&self, entry_price: f64, side: &Position) -> f64;
+    fn get_take_profit(&self, entry_price: f64, side: &Position) -> f64;
+    fn indicators_ready(&self) -> bool;
+}
+
+struct BaseStrategy {
+    symbol: String,
+    timeframe: String,
+    indicators: HashMap<String, Vec<f64>>
+}
+
+impl BaseStrategy {
+    fn new(symbol: String, timeframe: String) -> Self {
+        Self {
+            symbol,
+            timeframe,
+            indicators: HashMap::new()
+        }
+    }
+}
+
+struct MyStrategy {
+    strategy: BaseStrategy
+}
+
+impl TradingStrategy for MyStrategy {
+    fn new(&self, symbol: String, timeframe: String) -> Self {
+        Self {
+            strategy: BaseStrategy::new(symbol, timeframe)
+        }
+    }
+
+    fn analyze_market(&mut self, candles: &mut [CandleSticks]) {
+        if let Some(last) = candles.last() {
+            self.strategy.indicators.insert("closing_price".into(), vec![last.close]);
+        }
+    }
+
+    fn get_stop_loss(&self, entry_price: f64, side: &Position) -> f64 {
+        match side {
+            Position::LONG => entry_price * 0.99,
+            Position::SHORT => entry_price * 1.01
+        }
+    }
+
+    fn get_take_profit(&self, entry_price: f64, side: &Position) -> f64 {
+        match side {
+            Position::LONG => entry_price * 1.02,
+            Position::SHORT => entry_price * 0.98
+        }
+    }
+
+    fn should_enter_long(&self) -> bool {
+        if let Some(last) = self.strategy.indicators.get("closing_price").cloned() {
+            last.last() > Some(&100.0)
+        }
+        else {
+            false
+        }
+    }
+
+    fn should_enter_short(&self) -> bool {
+        false
+    }
+
+    fn should_exit_position(&self, positions: &OrderPosition) -> bool {
+        match positions.position_side {
+            Position::LONG => {
+                if let Some(last) = self.strategy.indicators.get("closing_price").cloned() {
+                    last.last() > Some(&(positions.entry_price + 1.0))
+                }
+                else {
+                    false
+                }
+            }
+            Position::SHORT => false
+        }
+    }
+
+    fn indicators_ready(&self) -> bool {
+        false
+    }
+}
+
+struct MACStrategy {
+    fast_period: usize,
+    slow_period: usize,
+    rsi_period: usize,
+    rsi_overbought: usize,
+    rsi_oversold: usize,
+    strategy: BaseStrategy
+}
+
+impl TradingStrategy for MACStrategy {
+    fn new(&self, symbol: String, timeframe: String) -> Self
+    {
+        Self {
+            fast_period: self.fast_period,
+            slow_period: self.slow_period,
+            rsi_period: self.rsi_period,
+            rsi_overbought: 70,
+            rsi_oversold: 30,
+            strategy: BaseStrategy { symbol, timeframe, indicators: HashMap::new() }
+        }
+    }
+
+    fn analyze_market(&mut self, candles: &mut [CandleSticks]) {
+        if candles.len() < self.slow_period + self.rsi_period { }
+
+        let closes: Vec<f64> = candles.iter().map(|candle| candle.close).collect();
+        self.strategy.indicators = HashMap::new();
+        self.strategy.indicators.insert("slow_ma".into(), calculate_ema(&closes, self.slow_period));
+        self.strategy.indicators.insert("fast_ma".into(), calculate_ema(&closes, self.fast_period));
+        self.strategy.indicators.insert("rsi".into(), calculate_ema(&closes, self.rsi_period));
+    }
+
+    fn should_enter_long(&self) -> bool {
+        if !self.indicators_ready() {
+            return false;
+        }
+        let slow_ma = self.strategy.indicators.get("slow_ma").cloned().unwrap();
+        let fast_ma = self.strategy.indicators.get("fast_ma").cloned().unwrap();
+        let rsi = self.strategy.indicators.get("rsi").cloned().unwrap();
+
+        if fast_ma.len() >= 2 && slow_ma.len() >= 2 && rsi.len() >= 1 {
+            let current_golden_cross = fast_ma[fast_ma.len() - 1] > slow_ma[slow_ma.len() - 1];
+            let previous_golden_cross = fast_ma[fast_ma.len() - 2] > slow_ma[slow_ma.len() - 2];
+            return current_golden_cross && !previous_golden_cross && rsi[rsi.len() - 1] < self.rsi_overbought as f64;
+        }
+
+        false
+    }
+
+    fn should_enter_short(&self) -> bool {
+        if !self.indicators_ready() {
+            return false;
+        }
+
+        let slow_ma = self.strategy.indicators.get("slow_ma").cloned().unwrap();
+        let fast_ma = self.strategy.indicators.get("fast_ma").cloned().unwrap();
+        let rsi = self.strategy.indicators.get("rsi").cloned().unwrap();
+
+        if fast_ma.len() >= 2 && slow_ma.len() >= 2 && rsi.len() >= 1 {
+            let current_golden_cross = fast_ma[fast_ma.len() - 1] < slow_ma[slow_ma.len() - 1];
+            let previous_golden_cross = fast_ma[fast_ma.len() - 2] < slow_ma[slow_ma.len() - 2];
+            return current_golden_cross && !previous_golden_cross && rsi[rsi.len() - 1] > self.rsi_overbought as f64;
+        }
+
+        false
+    }
+
+    fn get_stop_loss(&self, entry_price: f64, side: &Position) -> f64 {
+        let stop_loss_pct = 0.02;
+
+        match side {
+            Position::LONG => {
+                return entry_price * (1.0 - stop_loss_pct);
+            },
+            Position::SHORT => {
+                return entry_price * (1.0 + stop_loss_pct);
+            }
+        }
+    }
+
+    fn get_take_profit(&self, entry_price: f64, side: &Position) -> f64 {
+        let take_profit_pct = 0.04;
+
+        match side {
+            Position::LONG => {
+                return entry_price * (1.0 + take_profit_pct);
+            },
+            Position::SHORT => {
+                return entry_price * (1.0 - take_profit_pct);
+            }
+        }
+    }
+
+    fn should_exit_position(&self, positions: &OrderPosition) -> bool {
+        if !self.indicators_ready() {
+            return false;
+        }
+
+        let slow_ma = self.strategy.indicators.get("slow_ma").cloned().unwrap();
+        let fast_ma = self.strategy.indicators.get("fast_ma").cloned().unwrap();
+
+        if fast_ma.len() >= 2 && slow_ma.len() >= 2 {
+            if matches!(positions.position_side, Position::LONG) {
+                return slow_ma[slow_ma.len() - 1] < fast_ma[fast_ma.len() - 1] && fast_ma[fast_ma.len() - 2] >= slow_ma[slow_ma.len() - 2];
+            }
+            else {
+                return slow_ma[slow_ma.len() - 1] > fast_ma[fast_ma.len() - 1] && fast_ma[fast_ma.len() - 2] <= slow_ma[slow_ma.len() - 2];
+            }
+        }
+        return false;
+    }
+
+    fn indicators_ready(&self) -> bool {
+        let required_indicators = ["fast_ma", "slow_ma", "rsi"];
+        
+        for indicator in required_indicators {
+            self.strategy.indicators[indicator].len() > 0;
+        }
+        return false;
+    }
+    
+}
