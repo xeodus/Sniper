@@ -1,63 +1,80 @@
 # Trade Bot 
 
+## Introduction
+
 ![Rust](https://img.shields.io/badge/Rust-006845?style=flat&logo=rust&logoColor=white&labelColor=333333)
 ![License: MIT](https://img.shields.io/badge/License-MIT-red.svg)
 
-## Table of Contents
-- [Introduction](#Introduction)
-- [Features](#Core_Features)
-- [Setup Guide](#Setup_Guide)
-
-## Introduction
-
-This is a trade bot designed for low latency environments like cryto exchanges. It leverages on robust market algorithms and statitical models to take high-frequency trades, capitalizing on market trends and volatility. The bot is written from scratch in Rust.
-
-**Project Underdevelopement..**
+This is an implementation of a trade bot designed for low-latency environments like cryto exchanges. It leverages on robust market algorithms and statitical models to take high-frequency trades. The bot takes cares of various market factors both in highly volatile market and as well as of side ways moving market. The bot was build from scratch in ```Rust```. The bot is being primarily developed for ```KuCoin``` exchange but hope to deliver for other exchanges too.
 
 ## Core Features
 
-- **Order Book Imbalance Strategy:** 
-
-```bash
-let imbalance = (bid_pressure - ask_pressure) / (bid_pressure + ask_pressure);
-```
+- **Strategy:** 
+- [x] Read candle stick patterns & historical data
+- [x] ```EMA``` & ```SMA calculations
+- [x] ```Bollinger Band``` calculations
+- [x] Market-based personal strategies
+- [x] Market-trend algorithms
 
 - **Risk Manangement Protocol:** 
 
-- [x] Maxium drawdown percentage and potential loss protocol
+- [x] Maxium drawdown percentage and potential loss protocols
 - [x] Advanced stop loss protocol
 - [x] Position sizing constraints
+- [x] Portfolio Risk-Manager
 
-- **Binance API Integration:** 
+- **KuCoin API Integration:** 
 
-- [x] Secure HMAC-SHA256 authentication
-- [x] Real time market data and order execution
+- [x] API & secret key integration
+- [x] Secure ```HMAC-SHA256``` authentication
+- [x] Real time market data and order execution using WebSockets
 
 - **Rust-Powered Performance:**
 
-- [x] Leverages Rust's speed and safety for high-performance financial applications
+- [x] ```Lock-free``` nature & ```Concurrency``` module
+- [x] Rust's speed and safety for high-performance financial applications
+- [x] ```Memory-Safety```
 
 - **Pending Work:**
 
 - [] More efficient error handling
+- [] Advanced Market-Making Algorithm integration
+- [] Seemless and blazing-fast WebSocket Integration
 - [] Backtesting
 - [] Model deployment
 
 ## Setup Guide
 
 - **Requirements:** 
-- [x] Rust 1.65+
-- [x] Binance API and secret keys
+- [x] ```Rust 1.65+```
+- [x] ```KuCoin``` API, secret keys, and passphrase
+
+- Create a ```.env``` file and host all your safety credentials there:
 
 ```bash
 # .env
 API_KEY="Your_API_key"
 SECRET_KEY="Your_secret_key"
+PASSPHRASE="Your_passphrase"
 ```
 
 - Ensure you have Rust installed. If not, install it from [rustup.rs](https://rustup.rs)
 
-Clone the repository:
+Project setup:
+
 ```bash
-git clone https://github.com/xeodus/moon-sniper.git
-cd moon-sniper
+git clone https://github.com/xeodus/Sniper.git
+cd Sniper
+```
+
+Test Build:
+
+```bash
+    cargo build # just like any other project
+    cargo run
+```
+
+Cheers 🍻
+
+Project is still under-development, everything is still in its trial phase..
+Hope to deploy soon 🤞
