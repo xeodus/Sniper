@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::time::sleep;
 use anyhow::Ok;
+mod ws_stream;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Side {
