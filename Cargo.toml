@@ -17,6 +17,7 @@ sha2 = "0.10"
 hmac = "0.12"
 hex = "0.4"
 log = "0.4"
+csv = "1.2"
 base64 = "0.21"
 anyhow = "1.0"
 chrono = "0.4"  #Timestamp handling
