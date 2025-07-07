@@ -1,4 +1,5 @@
-use std::{collections::{hash_set::SymmetricDifference, BTreeMap, HashMap}, env, fs, path::{Path, PathBuf}, time::{self, Duration, SystemTime, UNIX_EPOCH}};
+use std::{collections::{BTreeMap, HashMap}, env, fs, path::{Path, PathBuf}, time::{Duration, SystemTime, UNIX_EPOCH}};
+use csv::WriterBuilder;
 use hmac::{Hmac, Mac};
 use reqwest::{header::{HeaderMap, HeaderValue, CONTENT_TYPE}, Client};
 use sha2::Sha256;
@@ -7,7 +8,7 @@ use base64::engine::general_purpose::STANDARD;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::time::sleep;
-use anyhow::anyhow;
+use anyhow::Ok;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Side {
@@ -28,43 +29,43 @@ pub enum Position {
     SHORT
 }
 
-struct Config {
-    api_key: String,
-    api_secret: String,
-    api_passphrase: String,
-    base_url: String,
-    session: Option<String>
+pub struct Config {
+    pub api_key: String,
+    pub api_secret: String,
+    pub api_passphrase: String,
+    pub base_url: String,
+    pub sandbox: bool
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct OrderPosition {
-    symbol: String,
-    position_side: Position,
-    size: f64,
-    entry_price: f64,
-    available_balance: f64,
-    market_price: f64,
-    stop_loss: f64,
-    stop_price: f64,
-    unrealised_pnl: f64,
-    margin: f64
+pub struct OrderPosition {
+    pub symbol: String,
+    pub position_side: Position,
+    pub size: f64,
+    pub entry_price: f64,
+    pub available_balance: f64,
+    pub market_price: f64,
+    pub stop_loss: f64,
+    pub stop_price: f64,
+    pub unrealised_pnl: f64,
+    pub margin: f64
 }
 
 #[derive(Debug, Clone)]
-struct Order {
-    order_id: String,
-    symbol: String,
-    side: Side,
-    order_type: OrderType,
-    size: f64,
-    price: f64,
-    status: String,
-    filled_size: f64,
-    timestamp: i64
+pub struct Order {
+    pub order_id: String,
+    pub symbol: String,
+    pub side: Side,
+    pub order_type: OrderType,
+    pub size: f64,
+    pub price: f64,
+    pub status: String,
+    pub filled_size: f64,
+    pub timestamp: i64
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-struct CandleSticks {
+pub struct CandleSticks {
     symbol: String,
     timestamp: i64,
     open: f64,
@@ -72,51 +73,48 @@ struct CandleSticks {
     low: f64,
     close: f64,
     volume: f64,
-    quote_volume: f64,
-    trades_count: Option<i32>,
-    taker_buy_volume: Option<f64>,
-    taker_buy_quote_volume: Option<f64>
 }
 
-struct KlineQuery {
-    symbol: String,
-    from_time: i64,
-    to_time: i64,
-    limit: Option<i32>
+pub struct KlineQuery {
+    pub symbol: String,
+    pub from_time: i64,
+    pub to_time: i64,
+    pub limit: Option<i32>,
+    pub interval: String
 }
 
-struct OrderTimeBuffer {
-    placed_at: SystemTime,
-    order: Order,
-    order_id: String,
+pub struct OrderTimeBuffer {
+    pub placed_at: SystemTime,
+    pub order: Order,
+    pub order_id: String,
 }
 
-struct DataManager {
-    base_path: PathBuf
+pub struct DataManager {
+    pub base_path: PathBuf
 }
 
 impl DataManager {
-    fn new<p: AsRef<Path>>(base_path: p) -> Result<Self> {
+    pub fn new<P: AsRef<Path>>(base_path: P) -> Self {
         let base_path = base_path.as_ref().to_path_buf();
         fs::create_dir_all(&base_path)
             .expect("Failed to create data directory..");
 
-        Ok(Self { base_path })
-            
+        Self { base_path }
     }
 
-    fn get_csv_path(&self, symbol: &str, timeframe: &str)
+    pub fn get_csv_path(&self, symbol: &str, timeframe: i64)
     -> PathBuf
     {
-        self.base_path.join(symbol.to_uppercase())
-        .join(foramt!("{}.csv", timeframe))
+        let symbol_dir = self.base_path.join(symbol.to_uppercase());
+        fs::create_dir_all(&symbol_dir).unwrap_or_default();
+        symbol_dir.join(format!("{}.csv", timeframe))
     }
 
-    fn save_to_csv(&self,
+    pub fn save_to_csv(&self,
         symbol: &str,
-        timeframe: &str,
+        timeframe: i64,
         candles: &[CandleSticks]
-    ) -> Result<PathBuf> 
+    ) -> Result<PathBuf, anyhow::Error> 
     {
         if candles.is_empty() {
             return Err(anyhow::anyhow!("No data to save.."));
@@ -139,7 +137,7 @@ impl DataManager {
 }
 
 impl OrderTimeBuffer {
-    fn new(order_: &Order) -> Self {
+    pub fn new(order_: &Order) -> Self {
         Self {
             placed_at: SystemTime::now(),
             order: order_.clone(),
@@ -147,43 +145,50 @@ impl OrderTimeBuffer {
         }
     }
 
-    fn age(&self) -> Duration {
+    pub fn age(&self) -> Duration {
         SystemTime::now()
         .duration_since(self.placed_at)
         .unwrap_or(Duration::from_secs(0))
     }
 
-    fn is_expired(&self, max_age: &Duration) -> bool {
+    pub fn is_expired(&self, max_age: &Duration) -> bool {
         self.age() >= *max_age
     }
 }
 
 trait KucoinFuturesAPI {
-    fn new() -> Self;
-    async fn signature_generation(&self, query_string: &str) -> String;
+    fn new(sandbox: bool) -> Result<Self, anyhow::Error> where Self: Sized;
+    async fn signature_generation(&self, timestamp: &str, method: &str, path: &str, body: &str) -> String;
     async fn generate_passphrase(&self) -> String;
-    async fn header_assembly(&self, endpoint: &str) -> HeaderMap;
-    async fn authenticate_request(
-        &mut self,
-        pos_: &OrderPosition,
-        type_: &OrderType
-    ) -> Result<String, Box<dyn std::error::Error>>;
+    async fn header_assembly(&self, method: &str, path: &str, body: &str) -> HeaderMap;
 }
 
 impl KucoinFuturesAPI for Config {
-    fn new() -> Self {
-        Config {
-            api_key: env::var("API_KEY").expect("API key not found.."),
-            api_secret: env::var("API_SECRET").expect("API secret not found"),
-            api_passphrase: env::var("API_PASSPHRASE").expect("API passphrase not found.."),
-            base_url: "https://api-sandbox-futures.kucoin.com".to_string(),
-            session: None
+    fn new(sandbox: bool) -> Result<Self, anyhow::Error> {
+        let base_url = if sandbox {
+            "https://api-sandbox-futures.kucoin.com".into()
         }
+        else {
+            "https://api-futures.kucoin.com".into()
+        };
+        Ok(
+            Config {
+                api_key: env::var("API_KEY").expect("API key not found.."),
+                api_secret: env::var("API_SECRET").expect("API secret not found"),
+                api_passphrase: env::var("API_PASSPHRASE").expect("API passphrase not found.."),
+                base_url,
+                sandbox
+            }
+        )
     }
 
-    async fn signature_generation(&self, query_string: &str) -> String {
-        type HmacSha256 = Hmac<Sha256>;
-        let mut mac = HmacSha256::new_from_slice(
+    async fn signature_generation(&self, timestamp: &str, 
+        method: &str, 
+        path: &str, 
+        body: &str) -> String 
+    {
+        let query_string = format!("{}{}{}{}", timestamp, method, path, body);
+        let mut mac = Hmac::<Sha256>::new_from_slice(
             self.api_secret.as_bytes()
         )
         .expect("Hmac can take key of all size..");
@@ -193,8 +198,7 @@ impl KucoinFuturesAPI for Config {
     }
 
     async fn generate_passphrase(&self) -> String {
-        type HmacSha256 = Hmac<Sha256>;
-        let mut mac = HmacSha256::new_from_slice(
+        let mut mac = Hmac::<Sha256>::new_from_slice(
             self.api_secret.as_bytes()
         )
         .expect("Hmac can take key of all size..");
@@ -203,7 +207,11 @@ impl KucoinFuturesAPI for Config {
         STANDARD.encode(result.into_bytes())
     }
 
-    async fn header_assembly(&self, endpoint: &str) -> HeaderMap {
+    async fn header_assembly(&self,
+        method: &str,
+        path: &str, 
+        body: &str) -> HeaderMap 
+    {
         let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards..")
@@ -211,7 +219,12 @@ impl KucoinFuturesAPI for Config {
         .to_string();
 
         let mut headers = HeaderMap::new();
-        let signature = self.signature_generation(endpoint).await;
+        let signature = self.signature_generation(
+            &timestamp,
+            method,
+            path,
+            body)
+            .await;
         let passphrase = self.generate_passphrase().await;
         headers.insert("KC-API-KEY", HeaderValue::from_str(&self.api_key).unwrap());
         headers.insert("KC-API-SECRET", HeaderValue::from_str(&signature).unwrap());
@@ -221,585 +234,166 @@ impl KucoinFuturesAPI for Config {
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         headers
     }
-
-    async  fn authenticate_request(
-        &mut self, 
-        pos_: &OrderPosition, 
-        type_: &OrderType
-    ) -> Result<String, Box<dyn std::error::Error>> {
-
-        let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards..")
-        .as_secs()
-        .to_string();
-
-        let mut params = HashMap::new();
-        params.insert("symbol", pos_.symbol.clone());
-
-        let type_str = match type_ {
-            OrderType::MARKET => "MARKET".to_string(),
-            OrderType::LIMIT => "LIMIT".to_string(),
-            OrderType::STOP => "STOP".to_string()
-        };
-
-        let order_type = match type_str.as_str() {
-            "MARKET" => {
-                println!("Placed market order for buying!");
-                params.insert("order_type", pos_.market_price.to_string())
-            },
-            "LIMIT" => {
-                println!("Placed limit order for buying!");
-                params.insert("order_type", pos_.entry_price.to_string())
-            },
-            "STOP" => {
-                println!("Placed stop order for buying!");
-                params.insert("order_type", pos_.stop_price.to_string())
-            }
-            _ => None
-        };
-
-        params.insert("order_type", format!("{:?}", order_type));
-
-        let query_string = serde_urlencoded::to_string(params).unwrap();
-        let client = Client::new();
-        let url = format!("{}/api/v1/?query_string{}&timestamp={}",
-            self.base_url,
-            query_string,
-            timestamp
-        );
-        let header = self.header_assembly(&url).await;
-
-        let response = client.get(&url)
-        .headers(header)
-        .send()
-        .await?;
-
-        let res_status = response.status();
-
-        if !res_status.is_success() {
-            return Err(format!(
-                "Invalid response received: {}",
-                response.text().await?)
-                .into()
-            );
-        }
-
-        let body = response.text().await?;
-
-        Ok(body)
-    }
 }
 
-fn get_timestamp() -> String {
-    let timestamp = SystemTime::now()
-    .duration_since(UNIX_EPOCH)
-    .expect("Time ran backwards..")
-    .as_secs()
-    .to_string();
+// STRATEGY
+
+pub struct TechnicalIndicators;
+
+impl TechnicalIndicators {
+    fn calculate_sma(prices: &[f64], period: usize) -> Vec<f64> {
+        let mut sma_values = Vec::new();
+
+        if prices.len() < period {
+            return sma_values;
+        }
     
-    return timestamp;
-}
-
-fn get_order_id(response_json: &Value, order_: &Order) -> String {
-    let order_id = match &response_json["order-id"] {
-        Value::String(s) => s.clone(),
-        Value::Number(n) => n.to_string(),
-        _ => return format!("Cannot fetch the order ID for: {}", order_.order_id).into()
-    };
-
-    return order_id;
-}
-
-async fn get_account_info(
-    pos_: &OrderPosition,
-    cfg: &Config
-) -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>>
-{
-    let timestamp = get_timestamp();
-
-    let client = Client::new();
-    let url = format!(
-        "{}/api/v1/?symbol{}&balance={}&position={}&timestamp={}",
-        cfg.base_url,
-        pos_.symbol,
-        pos_.available_balance,
-        pos_.size,
-        timestamp
-    );
-    let response = client.get(&url)
-        .send()
-        .await?
-        .json::<OrderPosition>()
-        .await?;
-
-    let body = serde_json::to_value(response)?;
-    let value = vec![body];
-    Ok(value)
-}
-
-async fn place_buy_order(
-    type_: &OrderType,
-    pos_: &OrderPosition,
-    order_: &Order,
-    cfg: &Config
-) -> Result<String, Box<dyn std::error::Error>> 
-{
-    let timestamp = get_timestamp();
-
-    let mut params = HashMap::new();
-    params.insert("symbol", order_.symbol.clone());
-    params.insert("quantity", order_.size.to_string());
-    params.insert("side", "BUY".to_string());
-
-    params.insert("stop_loss", pos_.stop_loss.to_string());
-
-    let type_str = match type_ {
-        OrderType::MARKET => "MARKET".to_string(),
-        OrderType::LIMIT => "LIMIT".to_string(),
-        OrderType::STOP => "STOP".to_string()
-    };
-
-    let order_type = match type_str.as_str() {
-        "MARKET" => {
-            println!("Placed market order for buying!");
-            params.insert("order_type", pos_.market_price.to_string())
-        },
-        "LIMIT" => {
-            println!("Placed limit order for buying!");
-            params.insert("order_type", pos_.entry_price.to_string())
-        },
-        "STOP" => {
-            println!("Placed stop order for buying!");
-            params.insert("order_type", pos_.stop_price.to_string())
-        },
-        _ => {
-            None
+        for i in (period - 1).. prices.len() {
+            let windows = prices[i - period + 1..=i].iter().sum::<f64>() / period as f64;
+            sma_values.push(windows);
         }
-    };
-
-    params.insert("order_type", format!("{:?}", order_type));
-
-    let client = Client::new();
-    let query_string = serde_urlencoded::to_string(params).unwrap();
-    let url = format!("{}/api/v1/?query_string{}&timestamp={}", cfg.base_url, query_string, timestamp);
-    let response = client.post(&url)
-        .send()
-        .await?;
-
-    let res_status = response.status();
-
-    if !res_status.is_success() {
-        return Err(format!("Invalid response received: {}", response.text().await?).into());
+        sma_values
     }
 
-    let response_json = response.json::<Value>().await?;
-
-   let order_id = get_order_id(&response_json, &order_);
-
-    Ok(order_id)
-}
-
-async fn place_sell_order(
-    type_: &OrderType,
-    pos_: &OrderPosition,
-    order_: &Order,
-    cfg: &Config
-) -> Result<String, Box<dyn std::error::Error>>
-{
-    let timestamp = get_timestamp();
-
-    let mut params = HashMap::new();
-    params.insert("symbol", order_.symbol.clone());
-    params.insert("quantity", order_.size.to_string());
-    params.insert("side", "SELL".to_string());
-
-    let type_str = match type_ {
-        OrderType::MARKET => "MARKET".to_string(),
-        OrderType::LIMIT => "LIMIT".to_string(),
-        OrderType::STOP => "STOP".to_string()
-    };
+    fn calculate_ema(prices: &[f64], period: usize) -> Vec<f64> {
+        let mut ema_values = Vec::new();
     
-    let order_type = match type_str.as_str() {
-        "MARKET" => {
-            println!("Placed market order for buying!");
-            params.insert("order_type", pos_.market_price.to_string())
-        },
-        "LIMIT" => {
-            println!("Placed limit order for buying!");
-            params.insert("order_type", pos_.entry_price.to_string())
-        },
-        "STOP" => {
-            println!("Placed stop order for buying!");
-            params.insert("order_type", pos_.stop_price.to_string())
-        },
-        _ => {
-            None
+        if prices.len() < period {
+            return ema_values;
         }
-    };
-
-    params.insert("order_type", format!("{:?}", order_type));
-
-    let client = Client::new();
-    let query_string = serde_urlencoded::to_string(params).unwrap();
-    let url = format!("{}/api/v1/?query_string{}&timestamp={}",
-        cfg.base_url,
-        query_string,
-        timestamp
-    );
-
-    let response = client.post(&url)
-        .send()
-        .await?;
-
-    let res_status = response.status();
-
-    if !res_status.is_success() {
-        return Err(format!("Invalid response received: {}", response.text().await?).into());
-    }
-
-    let response_json = response.json::<Value>().await?;
-
-    if pos_.market_price < pos_.entry_price {
-        let loss_amount = pos_.entry_price - pos_.market_price;
-        let loss_percentage = (loss_amount / pos_.entry_price) * 100.0;
-        eprintln!("Execute the sell order at {:.1}% loss for: {}", loss_percentage, order_.symbol);
-    }
-
-    if order_.size == 0.0 {
-        return Err(format!("Invalid order size for: {}", order_.symbol).into());
-    }
-
-    let order_id = get_order_id(&response_json, &order_);
-
-    Ok(order_id)
-}
-
-async fn cancel_order(order_: &Order, cfg: &Config)
--> Result<bool, Box<dyn std::error::Error>>
-{
-    let timestamp = get_timestamp();
-
-    if order_.filled_size <= 0.0 || order_.size <= 0.0 {
-        eprintln!("Invaild amount cannot place order for: {}", order_.symbol);
-        return Ok::<bool, Box<dyn std::error::Error>>(true);
-    }
-
-    let client = Client::new();
-    let endpoint = format!("{}/api/v1/?symbol{}&order_id={}&timestamp={}",
-        cfg.base_url,
-        order_.symbol,
-        order_.order_id,
-        timestamp
-    );
-
-    let response = client.post(&endpoint)
-        .send()
-        .await?;
-
-    let res_status = response.status();
-
-    if !res_status.is_success() {
-        println!("Cannot place the order invalid response received..");
-        Ok(true)
-    }
-    else {
-        println!("Cannot cancel the order..");
-        Ok(false)
-    }
-}
-
-async fn get_status(order_: &Order, cfg: &Config)
--> Result<String, Box<dyn std::error::Error>>
-{
-    let timestamp = get_timestamp();
-
-    let client = Client::new();
-    let url = format!("{}/api/v1/status?symbol{}&order_id={}&timestamp={}",
-        cfg.base_url, 
-        order_.symbol, 
-        order_.order_id, 
-        timestamp
-    );
-
-    let response = client.get(&url).send().await?;
-    let res_status = response.status();
-
-    if !res_status.is_success() {
-        return Err(format!("Invalid response received for: {}", order_.symbol).into());
-    }
-
-    let response_json = response.json::<Value>().await?;
-
-    let order_status = &response_json["status"]
-    .as_str()
-    .unwrap_or("UNKNOWN")
-    .to_string();
-
-    Ok(order_status.to_string())
-}
-
-async fn check_and_cancel(
-    order_: &Order,
-    cfg: &Config,
-    max_buffer: &OrderTimeBuffer
-)
--> Result<bool, Box<dyn std::error::Error>>
-{
-    let order_status = get_status(&order_, &cfg).await?;
-
-    if max_buffer.is_expired(&Duration::from_secs(86400)) {
-        return Ok(false);
-    }
-
-    match order_status.as_str() {
-        "FILLED" | "EXPIRED" | "UNFILLED" | "CANCELED" => {
-            println!(
-                "Order {} with order status {} is already canceled, no need to cancel",
-                order_.order_id,
-                order_status
-            );
-            return Ok(false);
-        },
-        "PARTIALLY FILLED" | "NEW" => {
-            println!(
-                "Order {} with order status {} with age {:?} found, initiating cancellation..",
-                order_.order_id,
-                order_status,
-                max_buffer.age()
-            );
+        
+        let multiplier = 2.0 / (period + 1) as f64;
+        let first_sma = prices[..period].iter().sum::<f64>() / period as f64;
+        ema_values.push(first_sma);
+    
+        for i in period.. prices.len() {
+            let prev_ema = ema_values.last().unwrap();
+            let ema = (prices[i] - prev_ema) * multiplier + prev_ema;
+            ema_values.push(ema);
         }
-        _ => {
-            println!("Unkown order status found for order {}, cancelling anyway..", order_.order_id);
-        }
+        ema_values
     }
 
-    cancel_order(&order_, &cfg).await
-}
-
-async fn auto_cancel_orders(
-    order_: &Order,
-    cfg: &Config,
-    max_buffer: &OrderTimeBuffer
-) -> Result<bool, Box<dyn std::error::Error>>
-{
-    sleep(Duration::from_secs(86400)).await;
-
-    match check_and_cancel(&order_, &cfg, &max_buffer).await {
-        Ok(cancelled) => {
-            if !cancelled {
-                println!("Cannot auto-cancel order {} for symbol {}", order_.order_id, order_.symbol);
-                Ok(false)
+    fn calculate_rsi(prices: &[f64], period: usize) -> Vec<f64> {
+        let mut rsi_values = Vec::new();
+    
+        if prices.len() < period + 1 {
+            return rsi_values;
+        }
+    
+        let changes: Vec<f64> = prices.windows(2)
+            .map(|f| f[1] - f[0]).collect();
+    
+        let mut gains: Vec<f64> = Vec::new();
+        let mut losses: Vec<f64> = Vec::new();
+    
+        for change in changes {
+            gains.push(if change > 0.0 { change } else { 0.0 });
+            losses.push(if change < 0.0 { -change } else { 0.0 });
+        }
+    
+        for i in (period - 1).. gains.len() {
+            let avg_gain = gains[i - period +1..=i].iter().sum::<f64>() / period as f64;
+            let avg_loss = losses[i - period + 1..=i].iter().sum::<f64>() / period as f64;
+    
+            let rsi = if avg_loss == 0.0 {
+                100.0
             }
             else {
-                println!("Auto-cancelled order {} for symbol {}", order_.order_id, order_.symbol);
-                Ok(true)
-            }
-        },
-        Err(e) => return Err(format!(
-            "Cannot cancnel order {} for {}: {}",
-            order_.order_id,
-            order_.symbol, e)
-            .into()
-        )
-    }
-}
-
-// Strategy
-async fn get_historical_data(cfg: &Config, query: &KlineQuery)
--> Result<Vec<CandleSticks>, anyhow::Error>
-{
-    let timestamp = get_timestamp();
-    let mut params = HashMap::new();
-    params.insert("symbol", query.symbol.clone());
-    params.insert("from_time", query.from_time.to_string());
-    params.insert("to_time", query.to_time.to_string());
-    params.insert("limit", query.limit.map(|l| l.to_string()).unwrap_or(0.to_string()));
-
-    let client = Client::new();
-    let query_string = serde_urlencoded::to_string(params).unwrap();
-    let url = format!(
-        "{}/api/v1/?kline&query={}timestamp={}", 
-        cfg.base_url,
-        query_string,
-        timestamp
-    );
-
-    let response = client.get(&url).send().await?;
-    let res_status = response.status();
-
-    if !res_status.is_success() {
-        return Err(anyhow::anyhow!(format!("Invalid response received: {}", response.text().await?)));
-    }
-
-    let response_json = response.json::<CandleSticks>().await?;
-    let raw_data = serde_json::to_value(&response_json).unwrap();
-    let data_array = vec![raw_data];
-    let mut klines = Vec::new();
-
-    for item in data_array.iter().rev() {
-        let arr = item.as_array()
-            .ok_or_else(|| anyhow::anyhow!("Invalid kline format!"))?;
-
-        if arr.len() < 12 {
-            return Err(anyhow::anyhow!("Insufficent kline data fields received"));
-        }
-
-        let kline = CandleSticks {
-            symbol: query.symbol.clone(),
-            timestamp: arr[0].as_i64().unwrap_or(0),
-            open: arr[1].as_str().unwrap_or("0").parse::<f64>()?,
-            high: arr[2].as_str().unwrap_or("0").parse::<f64>()?,
-            low: arr[3].as_str().unwrap_or("0").parse::<f64>()?,
-            close: arr[4].as_str().unwrap_or("0").parse::<f64>()?,
-            volume: arr[5].as_str().unwrap_or("0").parse::<f64>()?,
-            quote_volume: arr[6].as_str().unwrap_or("0").parse::<f64>()?,
-            trades_count: Some(arr[7].as_i64().unwrap_or(0) as i32),
-            taker_buy_quote_volume: Some(arr[8].as_str().unwrap_or("0").parse::<f64>()?),
-            taker_buy_volume: Some(arr[9].as_str().unwrap_or("0").parse::<f64>()?)
-        };
-
-        klines.push(kline);
-    }
-    Ok(klines)
-
-}
-
-async fn fetch_and_save_historical_data(
-    cfg: &Config,
-    query: &KlineQuery,
-    data_manager: &DataManager,
-    timeframe: &str
-) -> Result<Vec<CandleSticks>, anyhow::Error>
-{
-    println!("Fecthing {} data for {} from Kucoin", timeframe, query.symbol);
-
-    let data = get_historical_data(cfg, query).await?;
-
-    if data.is_empty() {
-        return Err(anyhow::anyhow!("No data received from Kucoin exchange.."));
-    }
-
-    data_manager.save_to_csv(&query.symbol, timeframe, &data);
-
-    println!("Successfully fetched and saved data for {} candles", data.len());
-    Ok(data)
-}
-
-// Strategy
-
-fn calculate_sma(prices: &Vec<f64>, period: usize) -> Vec<f64> {
-    let mut sma_values = Vec::new();
-
-    for i in 0.. (prices.len() - period) {
-        let windows = prices[..i + period].iter().sum::<f64>() / period as f64;
-        sma_values.push(windows);
-    }
-    sma_values
-}
-
-fn calculate_ema(prices: &Vec<f64>, period: usize) -> Vec<f64> {
-    let multiplier = 2.0 / (period + 1) as f64;
-    let mut ema_values = Vec::new();
-    let first_sma = prices[..period].iter().sum::<f64>() / period as f64;
-    ema_values.push(first_sma);
-
-    for i in period.. prices.len() {
-        let prev_ema = ema_values.last().unwrap();
-        let ema = (prices[i] - prev_ema) * multiplier + prev_ema;
-        ema_values.push(ema);
-    }
-    ema_values
-} 
-
-fn calculate_rsi(prices: Vec<f64>, period: usize) -> Vec<f64> {
-    let changes: Vec<f64> = (1.. prices.len())
-    .map(|i| (prices[i] - prices[i - 1]) as f64)
-    .collect();
-
-    let mut gains: Vec<f64> = changes.iter()
-    .map(|&change| if change > 0.0 {change} else {0.0})
-    .collect();
-
-    let mut losses: Vec<f64> = changes
-    .iter().map(|&change| if change > 0.0 {change} else {0.0})
-    .collect();
-
-    let mut rsi_values = Vec::new();
-
-    for i in (period - 1).. prices.len() {
-        let avg_gain = gains.split_off(i - period + 1).iter().sum::<f64>() / period as f64;
-        let avg_loss = losses.split_off(i - period + 1).iter().sum::<f64>() / period as f64;
-
-        if avg_loss == 0.0 {
-            let _rsi = 100;
-        }
-        else {
-            let rs = avg_gain / avg_loss;
-            let rsi = 100.0 - (100.0 / (1.0 + rs));
+                let rs = avg_gain / avg_loss;
+                100.0 - (100.0 / (1.0 + rs))
+            };
             rsi_values.push(rsi);
         }
+        rsi_values
     }
-    rsi_values
-}
 
-fn calculate_macd(prices: Vec<f64>, fast_period: usize, slow_period: usize, signal_period: usize) -> BTreeMap<String, Vec<f64>> {
-    let fast_ema = calculate_ema(&prices, fast_period);
-    let slow_ema = calculate_ema(&prices, slow_period);
-
-    let start_idx = fast_period - slow_period;
-    let macd_line: Vec<f64> = (1.. slow_ema.len()).map(|i| fast_ema[i + start_idx] - slow_ema[i]).collect();
-    let signal_line = calculate_ema(&prices, signal_period);
-
-    let histogram: Vec<f64> = (1.. signal_line.len())
-    .map(|i| macd_line[i + macd_line.len() - signal_line.len()] - signal_line[i])
-    .collect();
-
-    let mut map = BTreeMap::new();
-    map.insert("macd_line".to_string(), macd_line);
-    map.insert("signal".to_string(), signal_line);
-    map.insert("histogram".to_string(), histogram);
-    map
-}
-
-fn set_bollinger_bands(prices: Vec<f64>, period: usize, std_multiplier: f64) -> BTreeMap<String, Vec<f64>> {
-    let sma = calculate_sma(&prices, period);
-    let upper = Vec::new();
-    let lower = Vec::new();
-    let mut bands = BTreeMap::new();
-    bands.insert("middle".to_string(), sma.clone());
-    bands.insert("upper".to_string(), upper);
-    bands.insert("lower".to_string(), lower);
-
-    for i in (period - 1).. prices.len() {
-        let windows = &prices[.. i + period];
-        let std_dev: Vec<f64> = windows.iter().map(|x| (x - sma[i - period + 1]).powi(2) as f64).collect();
-        let std_dev_sum = std_dev.iter().sum::<f64>();
-        let upper_value = vec![&sma[i - period + 1] + (std_dev_sum * std_multiplier)];
-        let lower_value = vec![&sma[i - period + 1] - (std_dev_sum * std_multiplier)];
-
-        bands.get("upper").insert(&upper_value);
-        bands.get("lower").insert(&lower_value);
+    fn calculate_macd(prices: &[f64], 
+        fast_period: usize, 
+        slow_period: usize, 
+        signal_period: usize) -> BTreeMap<String, Vec<f64>> 
+    {
+        let mut map = BTreeMap::new();
+        let fast_ema = Self::calculate_ema(&prices, fast_period);
+        let slow_ema = Self::calculate_ema(&prices, slow_period);
+    
+        if fast_ema.len() < slow_ema.len() {
+            map.insert("macd_line".into(), Vec::new());
+            map.insert("signal".into(), Vec::new());
+            map.insert("histogram".into(), Vec::new());
+            return map;
+        }
+    
+        let start_idx = fast_period - slow_period;
+    
+        let macd_line: Vec<f64> = slow_ema.iter()
+            .enumerate()
+            .map(|(i, slow)| fast_ema[i + start_idx] - slow)
+            .collect();
+    
+        let signal_line = Self::calculate_ema(&macd_line, signal_period);
+    
+        let histogram = macd_line.iter()
+            .enumerate()
+            .skip(macd_line.len() - signal_line.len())
+            .zip(signal_line.iter())
+            .map(|(macd, signal)| macd.1 - signal)
+            .collect();
+    
+        map.insert("macd_line".into(), macd_line);
+        map.insert("signal".into(), signal_line);
+        map.insert("histogram".into(), histogram);
+        map
     }
-    bands
+
+    fn set_bollinger_bands(prices: &[f64], period: usize, std_multiplier: f64) -> BTreeMap<String, Vec<f64>> {
+        let sma = Self::calculate_sma(&prices, period);
+        let upper = Vec::new();
+        let lower = Vec::new();
+        let mut upper_value = Vec::new();
+        let mut lower_value = Vec::new();
+        let mut bands = BTreeMap::new();
+        
+        if prices.len() < period {
+            bands.insert("middle".to_string(), sma.clone());
+            bands.insert("upper".to_string(), upper);
+            bands.insert("lower".to_string(), lower);
+            return bands;
+        }
+    
+        for i in (period - 1).. prices.len() {
+            let windows = &prices[i - period + 1..=i];
+            let std_dev: Vec<f64> = windows.iter().map(|x| (x - sma[i - period + 1]).powi(2) as f64).collect();
+            let std_dev_sum = std_dev.iter().sum::<f64>();
+            upper_value.push(&sma[i - period + 1] + (std_dev_sum * std_multiplier));
+            lower_value.push(&sma[i - period + 1] - (std_dev_sum * std_multiplier));
+        }
+        bands.insert("middle".into(), sma.clone());
+        bands.insert("upper".into(), upper_value);
+        bands.insert("lower".into(), lower_value);
+        bands
+    }
+
 }
 
 // Risk Management
 
-struct PositionSizer {
-    account_balance: f64,
-    risk_per_trade: f64
+pub struct PositionSizer {
+    pub account_balance: f64,
+    pub risk_per_trade: f64,
+    pub max_position_size: f64
 }
 
 impl PositionSizer {
-    fn init(account_balance: f64, risk_per_trade: f64) -> Self {
+    pub fn init(account_balance: f64, risk_per_trade: f64) -> Self {
         Self {
             account_balance,
-            risk_per_trade
+            risk_per_trade,
+            max_position_size: account_balance * 0.1
         }
     }
 
-    fn calculate_position_size(&self, entry_price: f64, stop_loss: f64) -> f64 {
+    pub fn calculate_position_size(&self, entry_price: f64, stop_loss: f64) -> f64 {
         let risk_amount = self.account_balance * self.risk_per_trade;
         let stop_distance = (entry_price - stop_loss).abs();
 
@@ -809,18 +403,18 @@ impl PositionSizer {
 
         let position_size = risk_amount / stop_distance;
 
-        return position_size.min(self.account_balance * 0.1);
+        return position_size.min(self.max_position_size);
     }
 }
 
-struct PortfolioRiskManager {
-    max_portfolio_risk: f64,
-    max_drawdown: f64,
-    peak_balance: f64
+pub struct PortfolioRiskManager {
+    pub max_portfolio_risk: f64,
+    pub max_drawdown: f64,
+    pub peak_balance: f64
 }
 
 impl PortfolioRiskManager {
-    fn init(max_portfolio_risk: f64, max_drawdown: f64, peak_balance: f64) -> Self {
+    pub fn init(max_portfolio_risk: f64, max_drawdown: f64, peak_balance: f64) -> Self {
         Self {
             max_portfolio_risk,
             max_drawdown,
@@ -828,14 +422,14 @@ impl PortfolioRiskManager {
         }
     }
 
-    fn check_portfolio_risk(&self, positions: &[OrderPosition], account_balance: f64) -> bool {
+    pub fn check_portfolio_risk(&self, positions: &[OrderPosition], account_balance: f64) -> bool {
         let margin: Vec<f64> = positions.iter().map(|pos| pos.margin).collect();
         let total_margin = margin.iter().sum::<f64>();
         let portfolio_risk = total_margin / account_balance;
         return portfolio_risk <= self.max_portfolio_risk;
     }
 
-    fn check_drawdown(&mut self, current_balance: f64) -> bool {
+    pub fn check_drawdown(&mut self, current_balance: f64) -> bool {
         self.peak_balance = self.peak_balance.max(current_balance);
 
         if self.peak_balance == 0.0 {
@@ -847,160 +441,95 @@ impl PortfolioRiskManager {
     }
 }
 
-// Trading Stategy Framework
+// TRADING STRATEGY
 
-trait TradingStrategy {
-    fn new(&self, symbol: String, timeframe: String) -> Self where Self: Sized;
-    fn analyze_market(&mut self, candles: &mut [CandleSticks]);
-    fn should_enter_short(&self) -> bool;
+pub trait TradingStrategy {
+    fn new(fast_period: usize, slow_period: usize, rsi_period: usize) -> Self;
+    fn analyze_market(&mut self, candles: &[CandleSticks]);
     fn should_enter_long(&self) -> bool;
-    fn should_exit_position(&self, positions: &OrderPosition) -> bool;
+    fn should_enter_short(&self) -> bool;
     fn get_stop_loss(&self, entry_price: f64, side: &Position) -> f64;
     fn get_take_profit(&self, entry_price: f64, side: &Position) -> f64;
+    fn should_exit_position(&self, position: &OrderPosition) -> bool;
     fn indicators_ready(&self) -> bool;
 }
 
-struct BaseStrategy {
-    symbol: String,
-    timeframe: String,
-    indicators: HashMap<String, Vec<f64>>
-}
-
-impl BaseStrategy {
-    fn new(symbol: String, timeframe: String) -> Self {
-        Self {
-            symbol,
-            timeframe,
-            indicators: HashMap::new()
-        }
-    }
-}
-
-struct MyStrategy {
-    strategy: BaseStrategy
-}
-
-impl TradingStrategy for MyStrategy {
-    fn new(&self, symbol: String, timeframe: String) -> Self {
-        Self {
-            strategy: BaseStrategy::new(symbol, timeframe)
-        }
-    }
-
-    fn analyze_market(&mut self, candles: &mut [CandleSticks]) {
-        if let Some(last) = candles.last() {
-            self.strategy.indicators.insert("closing_price".into(), vec![last.close]);
-        }
-    }
-
-    fn get_stop_loss(&self, entry_price: f64, side: &Position) -> f64 {
-        match side {
-            Position::LONG => entry_price * 0.99,
-            Position::SHORT => entry_price * 1.01
-        }
-    }
-
-    fn get_take_profit(&self, entry_price: f64, side: &Position) -> f64 {
-        match side {
-            Position::LONG => entry_price * 1.02,
-            Position::SHORT => entry_price * 0.98
-        }
-    }
-
-    fn should_enter_long(&self) -> bool {
-        if let Some(last) = self.strategy.indicators.get("closing_price").cloned() {
-            last.last() > Some(&100.0)
-        }
-        else {
-            false
-        }
-    }
-
-    fn should_enter_short(&self) -> bool {
-        false
-    }
-
-    fn should_exit_position(&self, positions: &OrderPosition) -> bool {
-        match positions.position_side {
-            Position::LONG => {
-                if let Some(last) = self.strategy.indicators.get("closing_price").cloned() {
-                    last.last() > Some(&(positions.entry_price + 1.0))
-                }
-                else {
-                    false
-                }
-            }
-            Position::SHORT => false
-        }
-    }
-
-    fn indicators_ready(&self) -> bool {
-        false
-    }
-}
-
-struct MACStrategy {
-    fast_period: usize,
-    slow_period: usize,
-    rsi_period: usize,
-    rsi_overbought: usize,
-    rsi_oversold: usize,
-    strategy: BaseStrategy
+pub struct MACStrategy {
+    pub fast_period: usize,
+    pub slow_period: usize,
+    pub rsi_period: usize,
+    pub rsi_overbought: f64,
+    pub rsi_oversold: f64,
+    pub indicators: HashMap<String, Vec<f64>>
 }
 
 impl TradingStrategy for MACStrategy {
-    fn new(&self, symbol: String, timeframe: String) -> Self
-    {
+
+    fn new(fast_period: usize, slow_period: usize, rsi_period: usize) -> Self {
         Self {
-            fast_period: self.fast_period,
-            slow_period: self.slow_period,
-            rsi_period: self.rsi_period,
-            rsi_overbought: 70,
-            rsi_oversold: 30,
-            strategy: BaseStrategy { symbol, timeframe, indicators: HashMap::new() }
+            fast_period,
+            slow_period,
+            rsi_period,
+            rsi_overbought: 70.0,
+            rsi_oversold: 30.0,
+            indicators: HashMap::new()
         }
     }
 
-    fn analyze_market(&mut self, candles: &mut [CandleSticks]) {
-        if candles.len() < self.slow_period + self.rsi_period { }
+    fn analyze_market(&mut self, candles: &[CandleSticks]) {
+        if candles.len() < self.slow_period + self.rsi_period { return; }
 
         let closes: Vec<f64> = candles.iter().map(|candle| candle.close).collect();
-        self.strategy.indicators = HashMap::new();
-        self.strategy.indicators.insert("slow_ma".into(), calculate_ema(&closes, self.slow_period));
-        self.strategy.indicators.insert("fast_ma".into(), calculate_ema(&closes, self.fast_period));
-        self.strategy.indicators.insert("rsi".into(), calculate_ema(&closes, self.rsi_period));
+        self.indicators = HashMap::new();
+        self.indicators.insert(
+            "slow_ma".into(), 
+            TechnicalIndicators::calculate_ema(&closes, self.slow_period)
+        );
+        self.indicators.insert(
+            "fast_ma".into(), 
+            TechnicalIndicators::calculate_ema(&closes, self.fast_period)
+        );
+        self.indicators.insert(
+            "rsi".into(),
+            TechnicalIndicators::calculate_ema(&closes, self.rsi_period)
+        );
     }
 
     fn should_enter_long(&self) -> bool {
+
         if !self.indicators_ready() {
             return false;
         }
-        let slow_ma = self.strategy.indicators.get("slow_ma").cloned().unwrap();
-        let fast_ma = self.strategy.indicators.get("fast_ma").cloned().unwrap();
-        let rsi = self.strategy.indicators.get("rsi").cloned().unwrap();
 
-        if fast_ma.len() >= 2 && slow_ma.len() >= 2 && rsi.len() >= 1 {
+        let slow_ma = self.indicators.get("slow_ma").unwrap();
+        let fast_ma = self.indicators.get("fast_ma").unwrap();
+        let rsi = self.indicators.get("rsi").unwrap();
+
+        if fast_ma.len() >= 2 && slow_ma.len() >= 2 && !rsi.is_empty() {
             let current_golden_cross = fast_ma[fast_ma.len() - 1] > slow_ma[slow_ma.len() - 1];
-            let previous_golden_cross = fast_ma[fast_ma.len() - 2] > slow_ma[slow_ma.len() - 2];
-            return current_golden_cross && !previous_golden_cross && rsi[rsi.len() - 1] < self.rsi_overbought as f64;
+            let previous_golden_cross = fast_ma[fast_ma.len() - 2] <= slow_ma[slow_ma.len() - 2];
+            let rsi_not_overbought = rsi[rsi.len() - 1] < self.rsi_overbought as f64;   
+            return current_golden_cross && !previous_golden_cross && rsi_not_overbought;
         }
 
         false
     }
 
     fn should_enter_short(&self) -> bool {
+
         if !self.indicators_ready() {
             return false;
         }
 
-        let slow_ma = self.strategy.indicators.get("slow_ma").cloned().unwrap();
-        let fast_ma = self.strategy.indicators.get("fast_ma").cloned().unwrap();
-        let rsi = self.strategy.indicators.get("rsi").cloned().unwrap();
+        let slow_ma = self.indicators.get("slow_ma").unwrap();
+        let fast_ma = self.indicators.get("fast_ma").unwrap();
+        let rsi = self.indicators.get("rsi").unwrap();
 
-        if fast_ma.len() >= 2 && slow_ma.len() >= 2 && rsi.len() >= 1 {
+        if fast_ma.len() >= 2 && slow_ma.len() >= 2 && !rsi.is_empty() {
             let current_golden_cross = fast_ma[fast_ma.len() - 1] < slow_ma[slow_ma.len() - 1];
-            let previous_golden_cross = fast_ma[fast_ma.len() - 2] < slow_ma[slow_ma.len() - 2];
-            return current_golden_cross && !previous_golden_cross && rsi[rsi.len() - 1] > self.rsi_overbought as f64;
+            let previous_golden_cross = fast_ma[fast_ma.len() - 2] >= slow_ma[slow_ma.len() - 2];
+            let rsi_not_overbought = rsi[rsi.len() - 1] > self.rsi_overbought as f64;
+            return current_golden_cross && !previous_golden_cross && rsi_not_overbought;
         }
 
         false
@@ -1037,27 +566,179 @@ impl TradingStrategy for MACStrategy {
             return false;
         }
 
-        let slow_ma = self.strategy.indicators.get("slow_ma").cloned().unwrap();
-        let fast_ma = self.strategy.indicators.get("fast_ma").cloned().unwrap();
+        let slow_ma = self.indicators.get("slow_ma").cloned().unwrap();
+        let fast_ma = self.indicators.get("fast_ma").cloned().unwrap();
 
         if fast_ma.len() >= 2 && slow_ma.len() >= 2 {
-            if matches!(positions.position_side, Position::LONG) {
-                return slow_ma[slow_ma.len() - 1] < fast_ma[fast_ma.len() - 1] && fast_ma[fast_ma.len() - 2] >= slow_ma[slow_ma.len() - 2];
-            }
-            else {
-                return slow_ma[slow_ma.len() - 1] > fast_ma[fast_ma.len() - 1] && fast_ma[fast_ma.len() - 2] <= slow_ma[slow_ma.len() - 2];
+
+            match positions.position_side {
+                Position::LONG => {
+                    let current_bearish = fast_ma[fast_ma.len() - 1] < slow_ma[slow_ma.len() - 1];
+                    let previous_bullish = fast_ma[fast_ma.len() - 2] >= slow_ma[slow_ma.len() - 2];
+                    return current_bearish && previous_bullish;
+                },
+                Position::SHORT => {
+                    let current_bullish = fast_ma[fast_ma.len() - 1] > slow_ma[slow_ma.len() - 1];
+                    let previous_bearish = fast_ma[fast_ma.len() - 2] <= slow_ma[slow_ma.len() - 2];
+                    return current_bullish && previous_bearish;
+                }
             }
         }
-        return false;
+
+        false
     }
 
     fn indicators_ready(&self) -> bool {
         let required_indicators = ["fast_ma", "slow_ma", "rsi"];
         
         for indicator in required_indicators {
-            self.strategy.indicators[indicator].len() > 0;
+            if !self.indicators[indicator].is_empty() {
+                return false;
+            }
         }
-        return false;
+        true
     }
     
+}
+
+// TRADE BOT ENGINE
+
+pub struct TradingEngine {
+    pub config: Config,
+    pub strategy: MACStrategy,
+    pub position_size: PositionSizer,
+    pub data_manager: DataManager,
+    pub client: Client,
+    pub active_position: HashMap<String, OrderPosition>
+}
+
+impl TradingEngine {
+    pub fn new(config: Config,
+        strategy: MACStrategy,
+        account_balance: f64,
+        risk_per_trade: f64,
+        data_path: &str
+    ) -> Self
+    {
+        Self {
+            config,
+            strategy,
+            position_size: PositionSizer::init(account_balance, risk_per_trade),
+            data_manager: DataManager::new(data_path),
+            client: Client::new(),
+            active_position: HashMap::new()
+        }
+    }
+
+    pub fn get_timestamp() -> String {
+        SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+        .to_string()
+    }
+
+    pub async fn get_klines(&self, query: &KlineQuery) -> Result<Vec<CandleSticks>, anyhow::Error> {
+        let timestamp = Self::get_timestamp();
+        let path = format!(
+            "/api/v1/kline/query?symbol={}&granularity={}&from={}&to={}",
+            query.symbol, query.interval, query.from_time, query.to_time
+        );
+        let headers = self.config.header_assembly("GET", &path, &timestamp).await;
+        let url = format!("{}/{}", self.config.base_url, path);
+        let response = self.client.get(&url).headers(headers).send().await?;
+
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!(format!("Invalid response received: {}", response.text().await?)).into());
+        }
+
+        let json: Value = response.json().await?;
+        let mut candles = Vec::new();
+
+        if let Some(data) = json["data"].as_array() {
+            for item in data {
+                if let Some(arr) = item.as_array() {
+                    if arr.len() >= 6 {
+                        let candle = CandleSticks {
+                            symbol: query.symbol.clone(),
+                            timestamp: arr[0].as_str().unwrap_or("0").parse()?,
+                            open: arr[1].as_str().unwrap_or("0").parse()?,
+                            high: arr[2].as_str().unwrap_or("0").parse()?,
+                            low: arr[3].as_str().unwrap_or("0").parse()?,
+                            close: arr[4].as_str().unwrap_or("0").parse()?,
+                            volume: arr[5].as_str().unwrap_or("0").parse()?
+                        };
+                        candles.push(candle);
+                    }
+                }
+            }
+        }
+
+        Ok(candles)
+    }
+
+    pub async fn run_strategy(&mut self, symbol: &str, interval: &str) -> Result<(), anyhow::Error> {
+        println!("Starting the bot for symbol {} with interval {}", symbol, interval);
+
+        loop {
+            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;
+            let one_hour_ago = timestamp - 3600;
+
+            let query = KlineQuery {
+                symbol: symbol.to_string(),
+                from_time: one_hour_ago,
+                to_time: timestamp,
+                limit: Some(100),
+                interval: interval.to_string()
+            };
+
+            let kline = self.get_klines(&query).await;
+            use std::result::Result::{Ok, Err};
+            match kline {
+                Ok(candles) => {
+                    if candles.is_empty() {
+                        println!("No candles received, waiting...");
+                        sleep(Duration::from_secs(60)).await;
+                        continue;
+                    }
+                    else {
+                        println!("Candles received successfully: {:?}", candles);
+                    }
+
+                    self.strategy.analyze_market(&candles);
+
+                    if self.strategy.should_enter_long() {
+                        println!("Long signal received for symbol {}", symbol);
+                    }
+
+                    if self.strategy.should_enter_short() {
+                        println!("Short signal received for symbol {}", symbol);
+                    }
+
+                    if let Some(position) = self.active_position.get(symbol) {
+                        if self.strategy.should_exit_position(position) {
+                            println!("Exit signal detected for symbol {}", symbol);
+                        }
+                    }
+
+                    if let Err(e) = self.data_manager.save_to_csv(symbol, timestamp, &candles) {
+                        eprintln!("Failed to save data to csv: {}", e);
+                    }
+                },
+                Err(e) => return Err(anyhow::anyhow!(format!("Error fetching klines: {}", e)))
+            }
+            sleep(Duration::from_secs(30)).await;
+        }
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), anyhow::Error> {
+    dotenv::dotenv().ok();
+
+    let config = Config::new(true)?;
+    let strategy = Box::new(TradingStrategy::new(12, 26, 14));
+    let mut bot = TradingEngine::new(config, *strategy, 10000.0, 0.02, "./trading_data");
+    bot.run_strategy("BTCUSDT", "1min").await?;
+    Ok(())
 }
