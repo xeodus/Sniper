@@ -228,11 +228,11 @@ impl KucoinFuturesAPI for Config {
             body)
             .await;
         let passphrase = self.generate_passphrase().await;
-        headers.insert("KC-API-KEY", HeaderValue::from_str(&self.api_key).unwrap());
-        headers.insert("KC-API-SECRET", HeaderValue::from_str(&signature).unwrap());
-        headers.insert("KC-API-PASSPHRASE", HeaderValue::from_str(&passphrase).unwrap());
-        headers.insert("KC-API-KEY-TIMESTAMP", HeaderValue::from_str(&timestamp).unwrap());
-        headers.insert("KC-API-KEY-VERSION", HeaderValue::from_static("2"));
+        headers.insert("API-KEY", HeaderValue::from_str(&self.api_key).unwrap());
+        headers.insert("API-SECRET", HeaderValue::from_str(&signature).unwrap());
+        headers.insert("API-PASSPHRASE", HeaderValue::from_str(&passphrase).unwrap());
+        headers.insert("API-KEY-TIMESTAMP", HeaderValue::from_str(&timestamp).unwrap());
+        headers.insert("API-KEY-VERSION", HeaderValue::from_static("2"));
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         headers
     }
