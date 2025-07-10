@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-
 tokio = {version = "1.0", features = ["full"]}  #Async runtime
 tokio-tungstenite = { version = "0.19", features = ["native-tls"] }
 tokio-stream = {version = "0.1", features = ["sync"]}
@@ -22,3 +21,6 @@ base64 = "0.21"
 anyhow = "1.0"
 chrono = "0.4"  #Timestamp handling
 dotenv = "0.15.0" #Includes .env file for sensitive data handling
+
+[dev-dependencies]
+tokio-test = "0.4"
