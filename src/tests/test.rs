@@ -1,19 +1,21 @@
 #[cfg(test)]
-
-use super::*;
+use crate::{CandleSticks, 
+    MACStrategy, PositionSizer, 
+    TechnicalIndicators, TradingStrategy
+};
 
 #[test]
 fn test_sma_calculations() {
-    let prices = vec![1.0, 2.0, 5.0, 7.0, 13.0, 16.0, 18.0, 22.0, 24.0, 27.0];
+    let prices = vec![5.0, 7.0, 13.0, 16.0, 18.0];
     let sma = TechnicalIndicators::calculate_sma(&prices, 5);
-    assert_eq!(sma, vec![5.0, 7.0, 13.0, 16.0, 18.0]);
+    assert_eq!(sma, vec![11.8]);
 }
 
 #[test]
 fn test_position_sizing() {
     let size_init = PositionSizer::init(10000.0, 0.02);
-    let calculate_size = size_init.calculate_position_size(1450.0, 1200.0);
-    assert_eq!(calculate_size, 1600.0);
+    let calculate_size = size_init.calculate_position_size(1450.0, 72.5);
+    assert_eq!(calculate_size, 0.14);
 }
 
 #[test]
@@ -150,3 +152,4 @@ fn test_strategy_signals() {
 
     strategy.analyze_market(&candles);
 }
+

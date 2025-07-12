@@ -5,6 +5,7 @@ use serde_json::Value;
 use tokio::sync::broadcast;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
+#[derive(Debug, Clone)]
 pub struct MarketData {
     pub symbol: String,
     pub current_price: f64,

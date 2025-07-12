@@ -7,10 +7,11 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::time::sleep;
 use anyhow::Ok;
+use tokio::sync::{broadcast, mpsc};
+use crate::ws_stream::{MarketData, WebSocketBuilder};
 mod ws_stream;
-mod test;
+mod tests;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Side {
@@ -405,7 +406,7 @@ impl PositionSizer {
 
         let position_size = risk_amount / stop_distance;
 
-        return position_size.min(self.max_position_size);
+        return position_size;
     }
 }
 
@@ -611,7 +612,8 @@ pub struct TradingEngine {
     pub position_size: PositionSizer,
     pub data_manager: DataManager,
     pub client: Client,
-    pub active_position: HashMap<String, OrderPosition>
+    pub active_position: HashMap<String, OrderPosition>,
+    pub market_data_rx: mpsc::Receiver<MarketData>
 }
 
 impl TradingEngine {
@@ -619,7 +621,8 @@ impl TradingEngine {
         strategy: MACStrategy,
         account_balance: f64,
         risk_per_trade: f64,
-        data_path: &str
+        data_path: &str,
+        market_data_rx: mpsc::Receiver<MarketData>
     ) -> Self
     {
         Self {
@@ -628,7 +631,8 @@ impl TradingEngine {
             position_size: PositionSizer::init(account_balance, risk_per_trade),
             data_manager: DataManager::new(data_path),
             client: Client::new(),
-            active_position: HashMap::new()
+            active_position: HashMap::new(),
+            market_data_rx 
         }
     }
 
@@ -643,7 +647,7 @@ impl TradingEngine {
     pub async fn get_klines(&self, query: &KlineQuery) -> Result<Vec<CandleSticks>, anyhow::Error> {
         let timestamp = Self::get_timestamp();
         let path = format!(
-            "/api/v1/kline/query?symbol={}&granularity={}&from={}&to={}",
+            "/api/v3/kline/query?symbol={}&granularity={}&from={}&to={}",
             query.symbol, query.interval, query.from_time, query.to_time
         );
         let headers = self.config.header_assembly("GET", &path, &timestamp).await;
@@ -682,55 +686,41 @@ impl TradingEngine {
     pub async fn run_strategy(&mut self, symbol: &str, interval: &str) -> Result<(), anyhow::Error> {
         println!("Starting the bot for symbol {} with interval {}", symbol, interval);
 
-        loop {
-            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;
-            let one_hour_ago = timestamp - 3600;
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;
+        let one_hour_ago = timestamp - 3600;
 
-            let query = KlineQuery {
-                symbol: symbol.to_string(),
-                from_time: one_hour_ago,
-                to_time: timestamp,
-                limit: Some(100),
-                interval: interval.to_string()
-            };
+        let query = KlineQuery {
+            symbol: symbol.to_string(),
+            from_time: one_hour_ago,
+            to_time: timestamp,
+            limit: Some(100),
+            interval: interval.to_string()
+        };
 
-            let kline = self.get_klines(&query).await;
-            use std::result::Result::{Ok, Err};
-            match kline {
-                Ok(candles) => {
-                    if candles.is_empty() {
-                        println!("No candles received, waiting...");
-                        sleep(Duration::from_secs(60)).await;
-                        continue;
-                    }
-                    else {
-                        println!("Candles received successfully: {:?}", candles);
-                    }
+        let candles = self.get_klines(&query).await
+            .map_err(|e| anyhow::anyhow!(format!("Unable to fetch candle sticks for historical data: {}", e)))?;
 
-                    self.strategy.analyze_market(&candles);
+        self.strategy.analyze_market(&candles);
 
-                    if self.strategy.should_enter_long() {
-                        println!("Long signal received for symbol {}", symbol);
-                    }
-
-                    if self.strategy.should_enter_short() {
-                        println!("Short signal received for symbol {}", symbol);
-                    }
-
-                    if let Some(position) = self.active_position.get(symbol) {
-                        if self.strategy.should_exit_position(position) {
-                            println!("Exit signal detected for symbol {}", symbol);
-                        }
-                    }
-
-                    if let Err(e) = self.data_manager.save_to_csv(symbol, timestamp, &candles) {
-                        eprintln!("Failed to save data to csv: {}", e);
-                    }
-                },
-                Err(e) => return Err(anyhow::anyhow!(format!("Error fetching klines: {}", e)))
-            }
-            sleep(Duration::from_secs(30)).await;
+        if self.strategy.should_enter_long() {
+            println!("Long signal received for symbol {}", symbol);
         }
+
+        if self.strategy.should_enter_short() {
+            println!("Short signal received for symbol {}", symbol);
+        }
+
+        if let Some(position) = self.active_position.get(symbol) {
+            if self.strategy.should_exit_position(position) {
+                println!("Exit signal detected for symbol {}", symbol);
+            }
+        }
+
+        if let Err(e) = self.data_manager.save_to_csv(symbol, timestamp, &candles) {
+            eprintln!("Failed to save data to csv: {}", e);
+        }
+
+        Ok(())
     }
 }
 
@@ -738,9 +728,30 @@ impl TradingEngine {
 async fn main() -> Result<(), anyhow::Error> {
     dotenv::dotenv().ok();
 
+    let (bcast_tx, _) = broadcast::channel::<MarketData>(100);
+    let (mpsc_tx, mpsc_rx) = mpsc::channel::<MarketData>(100);
+    let mut bcast_rx = bcast_tx.subscribe();
+
+    tokio::spawn(async move {
+        let data = bcast_rx.recv().await
+            .map_err(|e| format!("Failed to fetch market data: {}", e));
+        if let Err(err) = mpsc_tx.send(data.unwrap()).await {
+            eprintln!("Failed to forward market data: {}", err);
+        }
+    });
+
+    let ws = WebSocketBuilder::new("wss://your.websocket.url".into(), bcast_tx);
+    let symbols = vec!["ETHUSDT".into()];
+
+    tokio::spawn(async move{
+        if let Err(e) = ws.ws_connect(&symbols).await {
+            eprintln!("WebSocket connection failed: {}", e);
+        }
+    });
+
     let config = Config::new(true)?;
     let strategy = Box::new(TradingStrategy::new(12, 26, 14));
-    let mut bot = TradingEngine::new(config, *strategy, 10000.0, 0.02, "./trading_data");
+    let mut bot = TradingEngine::new(config, *strategy, 10000.0, 0.02, "./trading_data", mpsc_rx);
     bot.run_strategy("ETHUSDT", "1min").await?;
     Ok(())
 }
