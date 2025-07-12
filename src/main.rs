@@ -247,12 +247,12 @@ impl TechnicalIndicators {
     pub fn calculate_sma(prices: &[f64], period: usize) -> Vec<f64> {
         let mut sma_values = Vec::new();
 
-        if prices.len() < period {
+        if period == 0 || prices.len() < period {
             return sma_values;
         }
     
         for i in (period - 1).. prices.len() {
-            let windows = prices[i - period + 1..=i].iter().sum::<f64>() / period as f64;
+            let windows = prices[i + 1 - period..=i].iter().sum::<f64>() / period as f64;
             sma_values.push(windows);
         }
         sma_values

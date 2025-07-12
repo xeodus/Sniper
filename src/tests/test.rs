@@ -6,16 +6,23 @@ use crate::{CandleSticks,
 
 #[test]
 fn test_sma_calculations() {
-    let prices = vec![5.0, 7.0, 13.0, 16.0, 18.0];
+    let prices = vec![5.0, 7.0, 13.0, 16.0, 18.0, 22.0, 25.0, 29.0];
     let sma = TechnicalIndicators::calculate_sma(&prices, 5);
-    assert_eq!(sma, vec![11.8]);
+    println!("SMA: {:?}", sma);
+    assert_eq!(sma.len(), 4);
+    assert_eq!(sma[0], 11.8);
+    assert_eq!(sma[1], 15.2);
+    assert_eq!(sma[2], 18.8);
+    assert_eq!(sma[3], 22.0);
 }
 
 #[test]
 fn test_position_sizing() {
     let size_init = PositionSizer::init(10000.0, 0.02);
     let calculate_size = size_init.calculate_position_size(1450.0, 72.5);
-    assert_eq!(calculate_size, 0.14);
+    assert_eq!(calculate_size, 0.14519056261343014);
+    let calculate_size = size_init.calculate_position_size(1500.0, 75.0);
+    assert_eq!(calculate_size, 0.14035087719298245);
 }
 
 #[test]
