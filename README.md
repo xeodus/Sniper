@@ -61,14 +61,20 @@ PASSPHRASE="Your_passphrase"
 Project setup:
 
 ```bash
-git clone https://github.com/xeodus/Sniper.git
-cd Sniper
+    git clone https://github.com/xeodus/Sniper.git
+    cd Sniper
+```
+To run tests:
+
+```bash
+    cd src/tests
+    cargo test
 ```
 
 Test Build:
 
 ```bash
-    cargo build # just like any other project
+    cargo build --release
     cargo run
 ```
 
