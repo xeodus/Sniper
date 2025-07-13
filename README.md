@@ -6,29 +6,28 @@
 
 This is an implementation of a trade bot designed for low-latency environments like cryto exchanges. It leverages on robust market algorithms and statistical models to take high-frequency trades. The bot takes care of various market factors both in highly volatile and side ways moving markets. The advanced market-making strategies and risk-management protocols are designed to secure sustained growth and minimize market mishaps. The bot is written from scratch in ```Rust```. The bot is being primarily developed for ```KuCoin``` exchange but hope to deliver for other exchanges too.
 
-## Strategy
+## Features
 
+- **Strategies:**
+- [x] Market-making strategies
 - [x] Read candle stick patterns & historical data
 - [x] ```EMA``` & ```SMA``` calculations
 - [x] ```Bollinger Band``` calculations
 - [x] Market-based personal strategies
 - [x] Market-trend algorithms
 
-## Risk-Management Protocol
-
+- **Risk Management:**
 - [x] Maxium drawdown percentage and potential loss protocols
 - [x] Advanced stop loss protocol
 - [x] Position sizing constraints
 - [x] Portfolio Risk-Manager
 
-## KuCoin API Integration
-
+- **KuCoin API Integration**
 - [x] API & secret key integration
 - [x] Secure ```HMAC-SHA256``` authentication
 - [x] Real time market data and order execution using WebSockets
 
-## Rust-Powered Performance
-
+- **Rust-Powered Performance**
 - [x] ```Lock-free``` nature & ```Concurrency``` module
 - [x] Rust's speed and safety for high-performance financial applications
 - [x] ```Memory-Safety```
