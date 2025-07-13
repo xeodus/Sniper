@@ -3,7 +3,7 @@
 ## Introduction
 
 ![Rust](https://img.shields.io/badge/Rust-006845?style=flat&logo=rust&logoColor=white&labelColor=333333)
-![Build Status](https://github.com/xeodus/Sniper/actions/workflows/Tests.yml/badge.svg)
+![Build Status](https://github.com/xeodus/Sniper/actions/workflows/CI/badge.svg)
 
 This is an implementation of a trade bot designed for low-latency environments like cryto exchanges. It leverages on robust market algorithms and statistical models to take high-frequency trades. The bot takes care of various market factors both in highly volatile and side ways moving markets. The advanced market-making strategies and risk-management protocols are designed to secure sustained growth and minimize market mishaps. The bot is written from scratch in ```Rust```. The bot is being primarily developed for ```KuCoin``` exchange but hope to deliver for other exchanges too.
 
