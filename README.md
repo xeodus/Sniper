@@ -28,7 +28,7 @@ Sniper is still in its early stages of development, and the code is subject to c
 
 - **Requirements:** 
 - [x] ```Rust 1.70+```
-- [x] ```KuCoin``` ```API key```, ```Secret key```, and ```Passphrase``
+- [x] ```KuCoin``` ```API key```, ```Secret key```, and ```Passphrase```
 
 - Create a ```.env``` file and host all your safety credentials there:
 
