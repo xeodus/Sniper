@@ -18,6 +18,8 @@ hex = "0.4"
 log = "0.4"
 csv = "1.2"
 base64 = "0.21"
+lazy_static = "1.5"
+uuid = { version = "1.8", features = ["v4"] }
 anyhow = "1.0"
 chrono = "0.4"  #Timestamp handling
 dotenv = "0.15.0" #Includes .env file for sensitive data handling

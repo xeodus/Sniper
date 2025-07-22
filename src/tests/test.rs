@@ -1,11 +1,13 @@
 #[cfg(test)]
-use crate::{CandleSticks, 
-    MACStrategy, PositionSizer, 
-    TechnicalIndicators, TradingStrategy
-};
+use crate::{data::{CandleSticks, MACStrategy}, 
+            execution::TradingStrategy, 
+            data::PositionSizer
+        };
 
 #[test]
 fn test_sma_calculations() {
+    use crate::strategy::TechnicalIndicators;
+
     let prices = vec![5.0, 7.0, 13.0, 16.0, 18.0, 22.0, 25.0, 29.0];
     let sma = TechnicalIndicators::calculate_sma(&prices, 5);
     println!("SMA: {:?}", sma);
