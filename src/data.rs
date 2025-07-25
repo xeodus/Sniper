@@ -9,12 +9,12 @@ pub enum Exchange {
     Binance
 }
 
-pub enum OrderStatus {
+/*pub enum OrderStatus {
     New,
     Filled,
     Canceled,
     Rejected
-}
+}*/
 
 #[derive(Debug)]
 pub struct OrderReq {
@@ -30,12 +30,12 @@ pub struct TopOfBook {
     pub symbol: String,
     pub bid: f64,
     pub ask: f64,
-    pub timestamp: i64
+    //pub timestamp: i64
 }
 
-pub struct OrderUpdate {
+/*pub struct OrderUpdate {
     pub id: String,
     pub status: OrderStatus
-}
+}*/
 
 pub struct TechnicalIndicators;

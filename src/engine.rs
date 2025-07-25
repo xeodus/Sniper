@@ -1,9 +1,9 @@
 use anyhow::Ok;
-
 use crate::{data::{OrderReq, TechnicalIndicators}, 
     exchange::RestClient, strategy::trade_strategy::StrategyCalculations
 };
 
+#[derive(Clone)]
 pub struct Engine<C: RestClient> {
     pub client: C,
     pub paper: bool,

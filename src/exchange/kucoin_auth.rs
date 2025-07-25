@@ -73,7 +73,7 @@ impl StreamBook for KuCoin {
                         symbol: d["symbol"].to_string(),
                         bid: d["bestBid"].as_f64().unwrap(),
                         ask: d["bestAsk"].as_f64().unwrap(),
-                        timestamp: d["timestamp"].as_i64().unwrap()
+                        //timestamp: d["timestamp"].as_i64().unwrap()
                     });
                 }
             }
@@ -86,6 +86,7 @@ impl RestClient for KuCoin {
     async fn place_order(&self, req: &OrderReq) -> anyhow::Result<()> {
         let body = json!({
             "clienOid": req.id.to_string(),
+            "symbol": req.symbol,
             "price": req.price.to_string(),
             "type": "limit",
             "quantity": req.quantity.to_string(),

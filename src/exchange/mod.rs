@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 use crate::data::{OrderReq, TopOfBook};
 
-pub mod auth;
+pub mod kucoin_auth;
+pub mod binance_auth;
 pub mod config;
 
 #[async_trait]

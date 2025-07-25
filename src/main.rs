@@ -2,8 +2,8 @@ use std::fs;
 use tokio::task;
 use tokio::sync::mpsc;
 
-use crate::{data::TopOfBook, engine::Engine,
-    exchange::{auth::KuCoin, config::{self}, StreamBook},
+use crate::{data::{Exchange, TopOfBook}, engine::Engine,
+    exchange::{binance_auth::Binance, config::{self}, kucoin_auth::KuCoin, StreamBook},
     strategy::market_making::MM
 };
 mod tests;
@@ -19,25 +19,45 @@ async fn main() -> std::io::Result<()> {
     dotenv::dotenv().ok();
     tracing_subscriber::fmt::init();
     let cfg: config::Config = toml::from_str(&fs::read_to_string("config.toml")?).unwrap();
-    let symbol = "ETH-USDT";
+    let kucoin_symbol = "ETH-USDT";
+    let binance_symbol = "ETHUSDT";
     let (tx, mut rx) = mpsc::unbounded_channel::<TopOfBook>();
-    let cfg_ = cfg.kucoin.clone();
+    let exchange1 = Exchange::KuCoin;
+    let exchange2 = Exchange::Binance;
+    let cfg1 = cfg.kucoin.clone();
+    let cfg2 = cfg.binance.clone();
 
     task::spawn(async move {
-        let mut ws = KuCoin::new(cfg_, symbol).await.unwrap();
-        while let Ok(tob) = ws.next_tob().await {
-            let _ = tx.send(tob);
-        }   
+        if matches!(exchange1, Exchange::KuCoin) {
+            let mut ws1 = KuCoin::new(cfg1, kucoin_symbol).await.unwrap();
+            while let Ok(tob) = ws1.next_tob().await {
+                let _ = tx.send(tob);
+            }
+        }
+        else if matches!(exchange2, Exchange::Binance) {
+            let mut ws2 = Binance::new(cfg2, binance_symbol).await.unwrap();
+            while let Ok(tob) = ws2.next_tob().await {
+                let _ = tx.send(tob);
+            }
+        }
     });
-
-    let client = KuCoin::new(cfg.kucoin.clone(), symbol).await.unwrap();
+    
+    let client1 = KuCoin::new(cfg.kucoin.clone(), kucoin_symbol).await.unwrap();
+    let client2 = Binance::new(cfg.binance.clone(), binance_symbol).await.unwrap();
+    let mut engine1 = Engine::new(client1, cfg.paper);
+    let mut engine2 = Engine::new(client2, cfg.paper);
     let mut mm = MM::new();
-    let mut engine = Engine::new(client, cfg.paper);
 
-    while let Some(tob) = rx.recv().await {
-        if let Some(order) = mm.decide(&tob) {
-            engine.handle(&order, &[order.price]).await.unwrap();
+    while let Some(tob_) = rx.recv().await {
+        if let Some(order) = mm.decide(&tob_) {
+            if matches!(tob_.exchange, Exchange::KuCoin) {
+                engine1.handle(&order, &[order.price]).await.unwrap();
+            }
+            else if matches!(tob_.exchange, Exchange::Binance) {
+                engine2.handle(&order, &[order.price]).await.unwrap();
+            }   
         }
     }
+
     Ok(())
 }
