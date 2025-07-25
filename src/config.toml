@@ -1,0 +1,10 @@
+paper = true
+
+[kucoin]
+api_key=
+secret_key=
+passphrase=
+
+[binance]
+api_key=
+secret_key=

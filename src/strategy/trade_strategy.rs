@@ -2,10 +2,18 @@
 // STRATEGY
 
 use std::collections::BTreeMap;
-pub struct TechnicalIndicators;
+use crate::data::TechnicalIndicators;
 
-impl TechnicalIndicators {
-    pub fn calculate_sma(prices: &[f64], period: usize) -> Vec<f64> {
+pub trait StrategyCalculations {
+    fn calculate_sma(prices: &[f64], period: usize) -> Vec<f64>;
+    fn calculate_ema(prices: &[f64], period: usize) -> Vec<f64>;
+    fn calculate_rsi(prices: &[f64], period: usize) -> Vec<f64>;
+    fn calculate_macd(prices: &[f64], fast_period: usize, slow_period: usize, signal_period: usize) -> BTreeMap<String, Vec<f64>>;
+    fn set_bollinger_bands(prices: &[f64], period: usize, std_multiplier: f64) -> BTreeMap<String, Vec<f64>>;
+}
+
+impl StrategyCalculations for TechnicalIndicators {
+    fn calculate_sma(prices: &[f64], period: usize) -> Vec<f64> {
         let mut sma_values = Vec::new();
 
         if period == 0 || prices.len() < period {
@@ -14,12 +22,12 @@ impl TechnicalIndicators {
     
         for i in (period - 1).. prices.len() {
             let windows = prices[i + 1 - period..=i].iter().sum::<f64>() / period as f64;
-            sma_values.push(windows);
+            sma_values.push(windows);        
         }
         sma_values
     }
 
-    pub fn calculate_ema(prices: &[f64], period: usize) -> Vec<f64> {
+    fn calculate_ema(prices: &[f64], period: usize) -> Vec<f64> {
         let mut ema_values = Vec::new();
     
         if prices.len() < period {
@@ -38,7 +46,7 @@ impl TechnicalIndicators {
         ema_values
     }
 
-    pub fn calculate_rsi(prices: &[f64], period: usize) -> Vec<f64> {
+    fn calculate_rsi(prices: &[f64], period: usize) -> Vec<f64> {
         let mut rsi_values = Vec::new();
     
         if prices.len() < period + 1 {
@@ -72,7 +80,7 @@ impl TechnicalIndicators {
         rsi_values
     }
 
-    pub fn calculate_macd(prices: &[f64], 
+    fn calculate_macd(prices: &[f64], 
         fast_period: usize, 
         slow_period: usize, 
         signal_period: usize) -> BTreeMap<String, Vec<f64>> 
@@ -110,7 +118,7 @@ impl TechnicalIndicators {
         map
     }
 
-    pub fn set_bollinger_bands(prices: &[f64], period: usize, std_multiplier: f64) -> BTreeMap<String, Vec<f64>> {
+    fn set_bollinger_bands(prices: &[f64], period: usize, std_multiplier: f64) -> BTreeMap<String, Vec<f64>> {
         let sma = Self::calculate_sma(&prices, period);
         let upper = Vec::new();
         let lower = Vec::new();

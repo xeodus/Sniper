@@ -1,125 +1,91 @@
-// TRADE BOT ENGINE
+use anyhow::Ok;
 
-use std::{collections::HashMap, time::{SystemTime, UNIX_EPOCH}};
-use reqwest::Client;
-use serde_json::Value;
-use tokio::sync::broadcast;
-use crate::data::MACStrategy;
+use crate::{data::{OrderReq, TechnicalIndicators}, 
+    exchange::RestClient, strategy::trade_strategy::StrategyCalculations
+};
 
-use crate::{auth::KucoinFuturesAPI, 
-            data::{CandleSticks, Config,
-            DataManager, KlineQuery, KuCoinGateway, 
-            PositionSizer, TradingEngine}, 
-            execution::TradingStrategy, 
-            ws_stream::MarketData,
-        };
+pub struct Engine<C: RestClient> {
+    pub client: C,
+    pub paper: bool,
+    pub last: Option<String>
+}
 
-impl TradingEngine {
-    pub fn new(config: Config,
-        strategy: MACStrategy,
-        gateway: KuCoinGateway,
-        account_balance: f64,
-        risk_per_trade: f64,
-        data_path: &str,
-        market_data_rx: broadcast::Receiver<MarketData>
-    ) -> Self
-    {
-        Self {
-            config,
-            strategy,
-            gateway,
-            position_size: PositionSizer::init(account_balance, risk_per_trade),
-            data_manager: DataManager::new(data_path),
-            client: Client::new(),
-            active_position: HashMap::new(),
-            market_data_rx
-        }
+impl<C: RestClient> Engine<C> {
+    pub fn new(client: C, paper: bool) -> Self {
+        Self { client, paper, last: None}
     }
 
-    pub fn get_timestamp() -> String {
-        SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis()
-        .to_string()
-    }
+    pub async fn handle(&mut self, req: &OrderReq, prices: &[f64]) -> anyhow::Result<()> {
+        let short_period = 12;
+        let long_period = 26;
+        let rsi_period = 14;
+        let signal_period = 9;
+        let boll_period = 20;
+        let std_dev = 2.0;
 
-    pub async fn get_klines(&self, query: &KlineQuery) -> Result<Vec<CandleSticks>, anyhow::Error> {
-        let timestamp = Self::get_timestamp();
-        let path = format!(
-            "/api/v3/kline/query?symbol={}&granularity={}&from={}&to={}",
-            query.symbol, query.interval, query.from_time, query.to_time
-        );
-        let headers = self.config.header_assembly("GET", &path, &timestamp).await;
-        let url = format!("{}/{}", self.config.base_url, path);
-        let response = self.client.get(&url).headers(headers).send().await?;
+        let short_ema = TechnicalIndicators::calculate_ema(prices, short_period);
+        let long_ema = TechnicalIndicators::calculate_ema(prices, long_period);
+        let rsi = TechnicalIndicators::calculate_rsi(prices, rsi_period);
+        let macd_map = TechnicalIndicators::calculate_macd(prices, short_period, long_period, signal_period);
+        let bands = TechnicalIndicators::set_bollinger_bands(prices, boll_period, std_dev);
 
-        if !response.status().is_success() {
-            return Err(anyhow::anyhow!(format!("Invalid response received: {}", response.text().await?)).into());
+        let short_ema_val = short_ema.last().unwrap();
+        let prev_short_ema = short_ema[short_ema.len() - 2];
+        let long_ema_val = long_ema.last().unwrap();
+        let prev_long_ema = long_ema[long_ema.len() - 2];
+        let rsi_val = rsi.last().unwrap();
+        let macd_line = macd_map.get("macd_line").unwrap();
+        let signal_line = macd_map.get("signal").unwrap();
+        let macd_val = macd_line.last().unwrap();
+        let prev_macd = macd_line[macd_line.len() - 2];
+        let signal_val = signal_line.last().unwrap();
+        let prev_signal = signal_line[signal_line.len() - 2];
+        let upper_band = bands.get("upper").unwrap().last().unwrap();
+        let lower_band = bands.get("lower").unwrap().last().unwrap();
+        let latest_price = prices[prices.len() - 1];
+
+        if self.paper {
+            tracing::info!("Paper order will be placed: {:?}", req);
+            return Ok(());
         }
 
-        let json: Value = response.json().await?;
-        let mut candles = Vec::new();
+        if let Some(id) = &self.last {
+            if prev_short_ema <= prev_long_ema && short_ema_val > long_ema_val {
+                tracing::info!("Placing order based on ema signals: {:?}", req);
+                return self.client.place_order(req).await;
+            }
+            else if prev_short_ema >= prev_long_ema && short_ema_val < long_ema_val {
+                tracing::info!("Canceling order based on ema signals: {:?}", req);
+                return self.client.cancel_order(id).await;
+            }
 
-        if let Some(data) = json["data"].as_array() {
-            for item in data {
-                if let Some(arr) = item.as_array() {
-                    if arr.len() >= 6 {
-                        let candle = CandleSticks {
-                            symbol: query.symbol.clone(),
-                            timestamp: arr[0].as_str().unwrap_or("0").parse()?,
-                            open: arr[1].as_str().unwrap_or("0").parse()?,
-                            high: arr[2].as_str().unwrap_or("0").parse()?,
-                            low: arr[3].as_str().unwrap_or("0").parse()?,
-                            close: arr[4].as_str().unwrap_or("0").parse()?,
-                            volume: arr[5].as_str().unwrap_or("0").parse()?
-                        };
-                        candles.push(candle);
-                    }
-                }
+            if *rsi_val < 30.0 {
+                tracing::info!("Placing order based on rsi signals: {:?}", req);
+                return self.client.place_order(req).await;
+            }
+            else if *rsi_val > 70.0 {
+                tracing::info!("Canceling order based on rsi signals: {:?}", req);
+                return self.client.cancel_order(id).await;
+            }
+
+            if prev_macd <= prev_signal && macd_val > signal_val {
+                tracing::info!("Placing order based on macd signals: {:?}", req);
+                return self.client.place_order(req).await;
+            }
+            else if prev_macd >= prev_signal && macd_val < signal_val {
+                tracing::info!("Canceling order based on macd signals: {:?}", req);
+                return self.client.cancel_order(id).await;
+            }
+            
+            if latest_price < *lower_band {
+                tracing::info!("Placing order based on bollinger band signals: {:?}", req);
+                return self.client.place_order(req).await;
+            }
+            else if latest_price > *upper_band {
+                tracing::info!("Canceling order based on bollinger band signals: {:?}", req);
+                return self.client.cancel_order(id).await;
             }
         }
-
-        Ok(candles)
-    }
-
-    pub async fn run_strategy(&mut self, symbol: &str, interval: &str) -> Result<(), anyhow::Error> {
-        println!("Starting the bot for symbol {} with interval {}", symbol, interval);
-
-        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;
-        let one_hour_ago = timestamp - 3600;
-
-        let query = KlineQuery {
-            symbol: symbol.to_string(),
-            from_time: one_hour_ago,
-            to_time: timestamp,
-            limit: Some(100),
-            interval: interval.to_string()
-        };
-
-        let candles = self.get_klines(&query).await
-            .map_err(|e| anyhow::anyhow!(format!("Unable to fetch candle sticks for historical data: {}", e)))?;
-
-        self.strategy.analyze_market(&candles);
-
-        if self.strategy.should_enter_long() {
-            println!("Long signal received for symbol {}", symbol);
-        }
-
-        if self.strategy.should_enter_short() {
-            println!("Short signal received for symbol {}", symbol);
-        }
-
-        if let Some(position) = self.active_position.get(symbol) {
-            if self.strategy.should_exit_position(position) {
-                println!("Exit signal detected for symbol {}", symbol);
-            }
-        }
-
-        if let Err(e) = self.data_manager.save_to_csv(symbol, timestamp, &candles) {
-            eprintln!("Failed to save data to csv: {}", e);
-        }
-
         Ok(())
     }
 }

@@ -1,59 +1,42 @@
-use std::{collections::HashMap, time::Duration};
+use std::fs;
+use tokio::task;
+use tokio::sync::mpsc;
 
-use reqwest::Client;
-use tokio::signal;
-
-use crate::{auth::KucoinFuturesAPI, 
-    data::{Config, DataManager, KuCoinGateway, 
-    MACStrategy, PositionSizer, TradingEngine}, 
-    execution::{OrderGateway, TradingStrategy}, 
-    ws_stream::{MarketData, WebSocketBuilder}
+use crate::{data::TopOfBook, engine::Engine,
+    exchange::{auth::KuCoin, config::{self}, StreamBook},
+    strategy::market_making::MM
 };
 mod tests;
-mod auth;
-mod buffer;
+mod exchange;
+mod utils;
 mod data;
-mod data_manager;
-mod engine;
-mod execution;
-mod risk_manager;
 mod strategy;
+mod engine;
 mod ws_stream;
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     dotenv::dotenv().ok();
-    let cfg = Config::new(true).unwrap();
+    tracing_subscriber::fmt::init();
+    let cfg: config::Config = toml::from_str(&fs::read_to_string("config.toml")?).unwrap();
+    let symbol = "ETH-USDT";
+    let (tx, mut rx) = mpsc::unbounded_channel::<TopOfBook>();
+    let cfg_ = cfg.kucoin.clone();
 
-    let (tx, rx) = tokio::sync::broadcast::channel::<MarketData>(128);
-    let ws_url = "wss://ws-api-sandbox-futures.kucoin.com/endpoint".into();
-    tokio::spawn(async move {
-        WebSocketBuilder::new(ws_url, tx.clone()).ws_connect(&["ETHUSDTM".into()]).await
+    task::spawn(async move {
+        let mut ws = KuCoin::new(cfg_, symbol).await.unwrap();
+        while let Ok(tob) = ws.next_tob().await {
+            let _ = tx.send(tob);
+        }   
     });
 
-    let mut engine = TradingEngine {
-        config: cfg.clone(),
-        strategy: MACStrategy::new(12, 26, 14),
-        position_size: PositionSizer::init(10000.0, 0.02),
-        data_manager: DataManager::new("./data"),
-        client: Client::new(),
-        gateway: KuCoinGateway::new(cfg),
-        active_position: HashMap::new(),
-        market_data_rx: rx
-    };
+    let client = KuCoin::new(cfg.kucoin.clone(), symbol).await.unwrap();
+    let mut mm = MM::new();
+    let mut engine = Engine::new(client, cfg.paper);
 
-    let mut ticker = tokio::time::interval(Duration::from_secs(60));
-
-    loop {
-        tokio::select! {
-            _ = ticker.tick() => {
-                engine.run_strategy("ETHUSDTM", "1min").await.expect("Strategy run failed..");
-            },
-            Ok(md) = engine.market_data_rx.recv() => {
-                engine.active_position.entry(md.symbol.clone())
-                .and_modify(|f| f.market_price = md.current_price);
-            },
-            _ = signal::ctrl_c() => break
+    while let Some(tob) = rx.recv().await {
+        if let Some(order) = mm.decide(&tob) {
+            engine.handle(&order, &[order.price]).await.unwrap();
         }
     }
     Ok(())
