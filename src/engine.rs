@@ -26,8 +26,10 @@ impl<C: RestClient> Engine<C> {
         let short_ema = TechnicalIndicators::calculate_ema(prices, short_period);
         let long_ema = TechnicalIndicators::calculate_ema(prices, long_period);
         let rsi = TechnicalIndicators::calculate_rsi(prices, rsi_period);
-        let macd_map = TechnicalIndicators::calculate_macd(prices, short_period, long_period, signal_period);
-        let bands = TechnicalIndicators::set_bollinger_bands(prices, boll_period, std_dev);
+        let macd_map = TechnicalIndicators::calculate_macd(prices,
+            short_period, long_period, signal_period);
+        let bands = TechnicalIndicators::set_bollinger_bands(prices, 
+            boll_period, std_dev);
 
         let short_ema_val = short_ema.last().unwrap();
         let prev_short_ema = short_ema[short_ema.len() - 2];
