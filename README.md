@@ -4,14 +4,15 @@
 ![Build Status](https://github.com/xeodus/Sniper/actions/workflows/ci.yml/badge.svg)
 ![License](https://img.shields.io/badge/License-MIT%20-white.svg)
 
-This is an implementation of a trade bot designed for low-latency environments like cryto exchanges. It leverages on robust market algorithms and statistical models to take high-frequency trades. The bot takes care of various market factors both in highly volatile and side ways moving markets. The advanced market-making strategies and risk-management protocols are designed to secure sustained growth and minimize market mishaps. The bot is written from scratch in ```Rust```. The bot is being primarily developed for ```KuCoin``` exchange but hope to deliver for other exchanges too.
+This is an implementation of a trade bot designed for fast-paced environments like cryto exchanges. This is a low-latency and cross-platform bot written in ``Rust``. It is leverages on robust market algorithms and statistical models to take high-frequency trades. The bot takes care of various market factors both in highly volatile and side ways moving markets. The advanced market-making strategies and risk-management protocols are designed to secure sustained growth and minimize market mishaps. The bot is being primarily developed for ```KuCoin``` and ``Binance`` crypto exchange but hope to deliver for other exchanges too. The bot is designed to be ``memory-safe``, ``concurrent`` and ``asynchronous`` in nature, making it suitablefor high-frequency trading applications;
 
-Sniper is still in its early stages of development, and the code is subject to change. The bot is designed to be memory-safe, concurrent, and asynchronous, making it suitable for high-performance trading applications.
+Sniper is still in its ``early stages of development``, and the code is subject to change. 
 
 ## Features
+
 - [x] **Advanced Market-Making Algorithms**
 - [x] **Risk Management Protocols**
-- [x] **KuCoin API Integration**
+- [x] **KuCoin and Binance API Integration**
 - [x] **WebSocket Integration**
 - [x] **Concurrency Module**
 - [x] **Memory-Safety**
@@ -27,16 +28,20 @@ Sniper is still in its early stages of development, and the code is subject to c
 ## Setup Guide
 
 - **Requirements:** 
-- [x] ```Rust 1.70+```
-- [x] ```KuCoin``` ```API key```, ```Secret key```, and ```Passphrase```
+- [x] ``Rust 1.70+``
+- [x] ``API key`` and ``Secret key`` from exchanges like ``Binance`` or ``KuCoin``
 
-- Create a ```.env``` file and host all your safety credentials there:
+- Keep all of your critical credentials stored inside ``.env`` file for the time being and ``.gitignore`` it.
 
 ```bash
 # .env
-API_KEY="Your_API_key"
-SECRET_KEY="Your_secret_key"
-PASSPHRASE="Your_passphrase"
+
+API_KEY="Your_KuCoin_API_key"
+SECRET_KEY="Your_KuCoin_secret_key"
+
+API_KEY="Your_Binance_API_key"
+SECRET_KEY="Your_Binance_secret_key"
+
 ```
 
 - Ensure you have Rust installed. If not, install it from [rustup.rs](https://rustup.rs)
@@ -44,17 +49,28 @@ PASSPHRASE="Your_passphrase"
 Project setup:
 
 ```bash
+
+    #Clone the project on your local machine
+
     git clone https://github.com/xeodus/Sniper.git
+
+    #Head over to the project the directory
+
     cd Sniper
+
 ```
 To run unit tests:
 
 ```bash
-    cd src/tests
+
+    # Write your own tests here
+    cd src/Tests
+
+    #Test
     cargo test
 ```
 
-Test Build:
+Build it:
 
 ```bash
     cargo build --release
@@ -63,5 +79,5 @@ Test Build:
 
 Cheers 🍻
 
-Project is still under-development, everything is still in its trial phase..
+Project is still ``under-development``, everything is still in its trial phase..
 Hope to deploy soon 🤞
