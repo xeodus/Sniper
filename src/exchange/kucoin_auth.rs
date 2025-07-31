@@ -39,7 +39,7 @@ impl KuCoin {
             .header("KC-API-KEY", &cfg.api_key)
             .header("KC-API-SIGN", sign)
             .header("KC-SECRET-KEY", cfg.secret_key.clone())
-            .header("KC-API-PASSPHRASE", cfg.passphrase.clone())
+            //.header("KC-API-PASSPHRASE", cfg.passphrase.clone())
             .header("KC-API-VERSION", "2")
             .send()
             .await?;
@@ -108,7 +108,7 @@ impl RestClient for KuCoin {
             .header("KC-API-SIGN", sign)
             .header("KC-API-TIMESTAMP", now)
             .header("KC-SECRET-KEY", &self.cfg.secret_key)
-            .header("KC-API-PASSPHRASE", &self.cfg.passphrase)
+            //.header("KC-API-PASSPHRASE", &self.cfg.passphrase)
             .header("KC-API-VERSION", "2")
             .body(body_str)
             .send()
@@ -129,7 +129,7 @@ impl RestClient for KuCoin {
             .header("KC-API-TIMESTAMP", now)
             .header("KC-API-SIGN", sign)
             .header("KC-SECRET-KEY", &self.cfg.secret_key)
-            .header("KC-API-PASSPHRASE", &self.cfg.passphrase)
+            //.header("KC-API-PASSPHRASE", &self.cfg.passphrase)
             .header("KC-API-VERSION", "2")
             .send()
             .await?;

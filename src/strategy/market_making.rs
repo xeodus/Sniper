@@ -1,5 +1,4 @@
 use uuid::Uuid;
-
 use crate::data::*;
 
 pub struct MM;

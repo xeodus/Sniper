@@ -4,7 +4,6 @@ use serde::Deserialize;
 pub struct Exchangecfg {
     pub api_key: String,
     pub secret_key: String,
-    pub passphrase: String
 }
 
 #[derive(Debug, Deserialize, Clone)]

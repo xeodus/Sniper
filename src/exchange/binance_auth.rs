@@ -5,7 +5,6 @@ use serde_json::json;
 use tokio::net::TcpStream;
 use tokio_stream::StreamExt;
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
-
 use crate::{data::*, exchange::{config::Exchangecfg, RestClient, StreamBook}, utils::signature};
 
 pub struct Binance {
@@ -71,12 +70,12 @@ impl RestClient for Binance {
             &format!("{}{}{}{}", now, "POST", "/api/v1/orders", body_str));
         let response = self.http.post(url)
             .header(CONTENT_TYPE, "/application/json")
-            .header("KC-API-KEY", &self.cfg.api_key)
-            .header("KC-API-SIGN", sign)
-            .header("KC-API-TIMESTAMP", now)
-            .header("KC-SECRET-KEY", &self.cfg.secret_key)
-            .header("KC-API-PASSPHRASE", &self.cfg.passphrase)
-            .header("KC-API-VERSION", "2")
+            .header("BNB-API-KEY", &self.cfg.api_key)
+            .header("BNB-API-SIGN", sign)
+            .header("BNB-API-TIMESTAMP", now)
+            .header("BNB-SECRET-KEY", &self.cfg.secret_key)
+            //.header("KC-API-PASSPHRASE", &self.cfg.passphrase)
+            .header("BNB-API-VERSION", "2")
             .body(body_str)
             .send()
             .await?;
@@ -92,12 +91,12 @@ impl RestClient for Binance {
             &format!("{}{}{}{}", now, "DELETE", format!("/api/v1/orders/{}", id), ""));
         
         self.http.delete(url)
-            .header("KC-API-KEY", &self.cfg.api_key)
-            .header("KC-API-TIMESTAMP", now)
-            .header("KC-API-SIGN", sign)
-            .header("KC-SECRET-KEY", &self.cfg.secret_key)
-            .header("KC-API-PASSPHRASE", &self.cfg.passphrase)
-            .header("KC-API-VERSION", "2")
+            .header("BNB-API-KEY", &self.cfg.api_key)
+            .header("BNB-API-TIMESTAMP", now)
+            .header("BNB-API-SIGN", sign)
+            .header("BNB-SECRET-KEY", &self.cfg.secret_key)
+            //.header("KC-API-PASSPHRASE", &self.cfg.passphrase)
+            .header("BNB-API-VERSION", "2")
             .send()
             .await?;
 

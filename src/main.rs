@@ -1,11 +1,12 @@
-use std::fs;
+use std::env;
 use tokio::task;
 use tokio::sync::mpsc;
 
 use crate::{data::{Exchange, TopOfBook}, engine::Engine,
-    exchange::{binance_auth::Binance, config::{self}, kucoin_auth::KuCoin, StreamBook},
-    strategy::market_making::MM
+    exchange::{binance_auth::Binance, config::{Config, Exchangecfg}, 
+    kucoin_auth::KuCoin, StreamBook}, strategy::market_making::MM
 };
+
 mod tests;
 mod exchange;
 mod utils;
@@ -15,10 +16,20 @@ mod engine;
 mod ws_stream;
 
 #[tokio::main]
-async fn main() -> std::io::Result<()> {
+async fn main() -> anyhow::Result<()> {
     dotenv::dotenv().ok();
     tracing_subscriber::fmt::init();
-    let cfg: config::Config = toml::from_str(&fs::read_to_string("config.toml")?).unwrap();
+    let cfg = Config {
+        kucoin: Exchangecfg {
+            api_key: env::var("API_KEY").expect("KuCoin API key is not set, or not found"),
+            secret_key: env::var("SECRET_KEY").expect("KuCoin secret key is not set, or not found")
+        },
+        binance: Exchangecfg {
+            api_key: env::var("API_KEY1").expect("Binance API key is not set, or not found"),
+            secret_key: env::var("SECRET_KEY1").expect("Binance secret key is not set, or not found")
+        },
+        paper: true
+    };
     let kucoin_symbol = "ETH-USDT";
     let binance_symbol = "ETHUSDT";
     let (tx, mut rx) = mpsc::unbounded_channel::<TopOfBook>();
