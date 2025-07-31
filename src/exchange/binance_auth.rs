@@ -50,7 +50,7 @@ impl StreamBook for Binance {
 
 #[async_trait]
 impl RestClient for Binance {
-    async fn place_order(&self, req: &OrderReq) -> anyhow::Result<()> {
+    async fn place_order(&self, req: &OrderReq) -> Result<(), anyhow::Error> {
         let body = json!({
             "clienOid": req.id.to_string(),
             "symbol": req.symbol,
@@ -79,6 +79,10 @@ impl RestClient for Binance {
             .body(body_str)
             .send()
             .await?;
+
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!(format!("Invalid response received upon placing order on Binance: {}", response.text().await?)));
+        }
 
         response.json::<serde_json::Value>().await?;
         Ok(())

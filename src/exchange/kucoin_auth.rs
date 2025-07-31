@@ -83,7 +83,7 @@ impl StreamBook for KuCoin {
 
 #[async_trait]
 impl RestClient for KuCoin {
-    async fn place_order(&self, req: &OrderReq) -> anyhow::Result<()> {
+    async fn place_order(&self, req: &OrderReq) -> Result<(), anyhow::Error> {
         let body = json!({
             "clienOid": req.id.to_string(),
             "symbol": req.symbol,
@@ -113,6 +113,10 @@ impl RestClient for KuCoin {
             .body(body_str)
             .send()
             .await?;
+
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!(format!("Invalid response received upon placing order on KuCoin: {}", response.text().await?)));
+        }
 
         response.json::<serde_json::Value>().await?;
         Ok(())
