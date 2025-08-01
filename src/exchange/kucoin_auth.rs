@@ -116,7 +116,9 @@ impl RestClient for KuCoin {
             .await?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!(format!("Invalid response received upon placing order on KuCoin: {}", response.text().await?)));
+            return Err(anyhow::anyhow!(format!(
+                "Invalid response received upon placing order on KuCoin: {}", 
+                response.text().await?)));
         }
 
         response.json::<serde_json::Value>().await?;
