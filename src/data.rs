@@ -22,7 +22,8 @@ pub struct OrderReq {
     pub symbol: String,
     pub price: f64,
     pub quantity: f64,
-    pub side: Side
+    pub side: Side,
+    pub timestamp: i64
 }
 
 pub struct TopOfBook {
@@ -30,7 +31,7 @@ pub struct TopOfBook {
     pub symbol: String,
     pub bid: f64,
     pub ask: f64,
-    //pub timestamp: i64
+    pub timestamp: i64
 }
 
 /*pub struct OrderUpdate {

@@ -17,13 +17,15 @@ impl MM {
             symbol: tob.symbol.clone(),
             price: mid * (1.0 + target / 2.0),
             quantity: 0.001,
-            side : Side::Buy
+            side : Side::Buy,
+            timestamp: tob.timestamp
         }).or(Some(OrderReq {
             id: Uuid::new_v4().to_string(),
             symbol: tob.symbol.clone(),
             price: mid * (1.0 - target / 2.0),
             quantity: 0.001,
-            side: Side::Sell
+            side: Side::Sell,
+            timestamp: tob.timestamp
         }));
     }
 }

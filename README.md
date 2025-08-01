@@ -49,24 +49,15 @@ SECRET_KEY="Your_Binance_secret_key"
 Project setup:
 
 ```bash
-
-    #Clone the project on your local machine
-
     git clone https://github.com/xeodus/Sniper.git
-
-    #Head over to the project the directory
-
     cd Sniper
-
 ```
 To run unit tests:
 
 ```bash
-
-    # Write your own tests here
+    # Write your own tests
     cd src/Tests
 
-    #Test
     cargo test
 ```
 

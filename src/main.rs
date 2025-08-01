@@ -21,17 +21,16 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     let cfg = Config {
         kucoin: Exchangecfg {
-            api_key: env::var("API_KEY").expect("KuCoin API key is not set, or not found"),
-            secret_key: env::var("SECRET_KEY").expect("KuCoin secret key is not set, or not found")
+            api_key: env::var("API_KEY").expect("KuCoin API key is not set!"),
+            secret_key: env::var("SECRET_KEY").expect("KuCoin secret key is not set!")
         },
         binance: Exchangecfg {
-            api_key: env::var("API_KEY1").expect("Binance API key is not set, or not found"),
-            secret_key: env::var("SECRET_KEY1").expect("Binance secret key is not set, or not found")
+            api_key: env::var("API_KEY1").expect("Binance API key is not set!"),
+            secret_key: env::var("SECRET_KEY1").expect("Binance secret key is not set!")
         },
         paper: true
     };
     let kucoin_symbol = "ETH-USDT";
-    let binance_symbol = "ETHUSDT";
     let (tx, mut rx) = mpsc::unbounded_channel::<TopOfBook>();
     let exchange1 = Exchange::KuCoin;
     let exchange2 = Exchange::Binance;
@@ -46,7 +45,7 @@ async fn main() -> anyhow::Result<()> {
             }
         }
         else if matches!(exchange2, Exchange::Binance) {
-            let mut ws2 = Binance::new(cfg2, binance_symbol).await.unwrap();
+            let mut ws2 = Binance::new(cfg2).await.unwrap();
             while let Ok(tob) = ws2.next_tob().await {
                 let _ = tx.send(tob);
             }
@@ -54,7 +53,7 @@ async fn main() -> anyhow::Result<()> {
     });
     
     let client1 = KuCoin::new(cfg.kucoin.clone(), kucoin_symbol).await.unwrap();
-    let client2 = Binance::new(cfg.binance.clone(), binance_symbol).await.unwrap();
+    let client2 = Binance::new(cfg.binance.clone()).await.unwrap();
     let mut engine1 = Engine::new(client1, cfg.paper);
     let mut engine2 = Engine::new(client2, cfg.paper);
     let mut mm = MM::new();
