@@ -86,8 +86,9 @@ impl<C: RestClient> Engine<C> {
             else if latest_price > *upper_band {
                 tracing::info!("Canceling order based on bollinger band signals: {:?}", req);
                 return self.client.cancel_order(id).await;
-            }
+            }                       
         }
+
         Ok(())
     }
 }

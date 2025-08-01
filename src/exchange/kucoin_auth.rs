@@ -73,7 +73,7 @@ impl StreamBook for KuCoin {
                         symbol: d["symbol"].to_string(),
                         bid: d["bestBid"].as_f64().unwrap(),
                         ask: d["bestAsk"].as_f64().unwrap(),
-                        //timestamp: d["timestamp"].as_i64().unwrap()
+                        timestamp: d["timestamp"].as_i64().unwrap()
                     });
                 }
             }
@@ -94,6 +94,7 @@ impl RestClient for KuCoin {
                 Side::Buy => "Buy",
                 Side::Sell => "Sell"
             },
+            "timestamp": req.timestamp.to_string()
         });
 
         let url = "https://api.kucoin.com/api/v1/orders";

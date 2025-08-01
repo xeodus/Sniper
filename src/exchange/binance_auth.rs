@@ -14,9 +14,8 @@ pub struct Binance {
 }
 
 impl Binance {
-    pub async fn new(cfg: Exchangecfg, symbol: &str) -> anyhow::Result<Self> {
-        let url = format!("wss://stream.binance.com:9443/ws/{}@bookTicker",
-            symbol.to_lowercase());
+    pub async fn new(cfg: Exchangecfg) -> anyhow::Result<Self> {
+        let url = "wss://ws-api.binance.com:443/ws-api/v3";
         let (ws, _) = connect_async(url).await?;
 
         Ok(Self {
@@ -40,7 +39,7 @@ impl StreamBook for Binance {
                         symbol: d["symbol"].to_string(),
                         bid: d["bestBid"].as_f64().unwrap(),
                         ask: d["bestAsk"].as_f64().unwrap(),
-                        //timestamp: d["timestamp"].as_i64().unwrap()
+                        timestamp: d["timestamp"].as_i64().unwrap()
                     });
                 }
             }
@@ -61,13 +60,14 @@ impl RestClient for Binance {
                 Side::Buy => "Buy",
                 Side::Sell => "Sell"
             },
+            "timestamp": req.timestamp.to_string()
         });
 
-        let url = "https://api.binance.com/api/v1/orders";
+        let url = "wss://ws-api.binance.com:443/ws-api/v3";       
         let body_str = body.to_string();
         let now = Utc::now().timestamp_millis().to_string();
         let sign = signature(self.cfg.secret_key.as_bytes(),
-            &format!("{}{}{}{}", now, "POST", "/api/v1/orders", body_str));
+            &format!("{}{}{}{}", now, "POST", "/ws-api/v3", body_str));
         let response = self.http.post(url)
             .header(CONTENT_TYPE, "/application/json")
             .header("BNB-API-KEY", &self.cfg.api_key)
@@ -81,7 +81,9 @@ impl RestClient for Binance {
             .await?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!(format!("Invalid response received upon placing order on Binance: {}", response.text().await?)));
+            return Err(anyhow::anyhow!(format!(
+                "Invalid response received upon placing order on Binance: {}",
+                response.text().await?)));
         }
 
         response.json::<serde_json::Value>().await?;
@@ -89,10 +91,10 @@ impl RestClient for Binance {
     }
 
     async fn cancel_order(&self, id: &str) -> anyhow::Result<()> {
-        let url = format!("https://api.binance.com/api/v1/orders/{}", id);
+        let url = "https://api.binance.com/api/v3/order";
         let now = Utc::now().timestamp_millis().to_string();
         let sign = signature(self.cfg.secret_key.as_bytes(),
-            &format!("{}{}{}{}", now, "DELETE", format!("/api/v1/orders/{}", id), ""));
+            &format!("{}{}{}{}", now, "DELETE", format!("/api/v3/order/id={}", id), ""));
         
         self.http.delete(url)
             .header("BNB-API-KEY", &self.cfg.api_key)
