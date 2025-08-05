@@ -16,3 +16,9 @@ fn test_sma_calculations() {
     assert_eq!(sma[2], 18.8);
     assert_eq!(sma[3], 22.0);
 }
+
+#[test]
+
+fn test_rsi_calculations() {
+    let prices = Vec::new();
+}
