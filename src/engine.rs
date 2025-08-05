@@ -12,7 +12,7 @@ pub struct Engine<C: RestClient> {
 
 impl<C: RestClient> Engine<C> {
     pub fn new(client: C, paper: bool) -> Self {
-        Self { client, paper, last: None}
+        Self { client, paper, last: None }
     }
 
     pub async fn handle(&mut self, req: &OrderReq, prices: &[f64]) -> anyhow::Result<()> {
