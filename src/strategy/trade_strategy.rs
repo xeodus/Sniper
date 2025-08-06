@@ -49,7 +49,7 @@ impl StrategyCalculations for TechnicalIndicators {
     fn calculate_rsi(prices: &[f64], period: usize) -> Vec<f64> {
         let mut rsi_values = Vec::new(); 
     
-        if prices.len() < period + 1 || period == 0 {
+        if prices.len() < (period+ 1) || period == 0 {
             return rsi_values;
         }
     

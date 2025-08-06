@@ -57,9 +57,3 @@ mod tests {
     }
 
 }
-
-#[test]
-
-fn test_rsi_calculations() {
-    let prices = Vec::new();
-}
