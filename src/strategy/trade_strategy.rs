@@ -19,11 +19,10 @@ impl StrategyCalculations for TechnicalIndicators {
         if period == 0 || prices.len() < period {
             return sma_values;
         }
-
-        for i in (period-1)..prices.len() {
-            let windows = &prices[i+1-period..=i];
-            let sma = windows.iter().sum::<f64>() / period as f64;
-            sma_values.push(sma);        
+    
+        for i in (period - 1).. prices.len() {
+            let windows = prices[i + 1 - period..=i].iter().sum::<f64>() / period as f64;
+            sma_values.push(windows);        
         }
         sma_values
     }
@@ -65,7 +64,7 @@ impl StrategyCalculations for TechnicalIndicators {
             losses.push(if *change < 0.0 { -change } else { 0.0 });
         }
     
-        for i in (period-1)..changes.len() {
+        for i in (period - 1).. gains.len() {
             let avg_gain = gains[i - period +1..=i].iter().sum::<f64>() / period as f64;
             let avg_loss = losses[i - period + 1..=i].iter().sum::<f64>() / period as f64;
     
@@ -150,3 +149,4 @@ impl StrategyCalculations for TechnicalIndicators {
         bands
     }
 }
+
