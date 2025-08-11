@@ -1,7 +1,5 @@
 use std::env;
-use tokio::task;
-use tokio::sync::mpsc;
-
+use tokio::{sync::mpsc, task};
 use crate::{data::{Exchange, TopOfBook}, engine::Engine,
     exchange::{binance_auth::Binance, config::{Config, Exchangecfg}, 
     kucoin_auth::KuCoin, StreamBook}, strategy::market_making::MM
@@ -19,6 +17,7 @@ mod ws_stream;
 async fn main() -> anyhow::Result<()> {
     dotenv::dotenv().ok();
     tracing_subscriber::fmt::init();
+    
     let cfg = Config {
         kucoin: Exchangecfg {
             api_key: env::var("API_KEY").expect("KuCoin API key is not set!"),
@@ -59,15 +58,28 @@ async fn main() -> anyhow::Result<()> {
     let mut mm = MM::new();
 
     while let Some(tob_) = rx.recv().await {
-        if let Some(order) = mm.decide(&tob_) {
+        tracing::info!("Received top of the orderbook: {:?}", tob_);
+        println!("Symbol: {}", tob_.symbol);
+        println!("Bid price from top of the orderbook: {:.2}", tob_.bid);
+        println!("Ask price from top of the orderbook: {:.2}", tob_.ask);
+        println!("Timestamp: {}", tob_.timestamp);
+
+        if let Some(order) = mm.decide(vec![tob_.bid], &tob_) {
+            tracing::info!("Generate order: {:?}", order);
+            println!("Order ID: {}", order.id);
+            println!("Price: {:.2}", order.price);
+            println!("Quantity: {:.4}", order.quantity);
+            println!("Order side: {:?}", order.side);
+
             if matches!(tob_.exchange, Exchange::KuCoin) {
-                engine1.handle(&order, &[order.price]).await.unwrap();
+                engine1.handle(&order).await.unwrap();
+                println!("Handling order on KuCoin exchange..");
             }
             else if matches!(tob_.exchange, Exchange::Binance) {
-                engine2.handle(&order, &[order.price]).await.unwrap();
+                engine2.handle(&order).await.unwrap();
+                println!("Handling order on Binance exchange..");
             }   
         }
     }
-
     Ok(())
 }
