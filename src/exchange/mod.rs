@@ -12,6 +12,6 @@ pub trait StreamBook {
 
 #[async_trait]
 pub trait RestClient {
-    async fn place_order(&self, req: &OrderReq) -> Result<(), anyhow::Error>;
+    async fn place_order(&self, req: &OrderReq) -> Result<String, anyhow::Error>;
     async fn cancel_order(&self, id: &str) -> anyhow::Result<()>;
 }
