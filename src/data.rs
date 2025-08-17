@@ -12,16 +12,17 @@ pub enum Exchange {
     Binance
 }
 
-/*pub enum OrderStatus {
+#[derive(Debug)]
+pub enum OrderStatus {
     New,
+    Sent,
     Filled,
-    Canceled,
     Rejected
-}*/
-
+}
 #[derive(Debug, Deserialize, Clone)]
 pub struct OrderReq {
     pub id: String,
+    pub exchange: Exchange,
     pub symbol: String,
     pub price: f64,
     pub quantity: f64,

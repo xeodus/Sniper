@@ -6,7 +6,7 @@ pub struct MM;
 impl MM {
     pub fn new() -> Self { MM }
 
-    pub fn decide(&mut self, prices: Vec<f64>,  tob: &TopOfBook) -> Option<OrderReq> {
+    pub fn decide(&mut self, prices: Vec<f64>, exchange: Exchange, tob: &TopOfBook) -> Option<OrderReq> {
         let spread = (tob.ask - tob.bid) / tob.bid;
         if spread < 0.001 { return None; }
         let mid = (tob.bid + tob.ask) / 2.0;
@@ -45,6 +45,7 @@ impl MM {
         if prev_short_ema <= prev_long_ema && short_ema_val > long_ema_val {
             return Some(OrderReq {
                 id: Uuid::new_v4().to_string(),
+                exchange,
                 symbol: tob.symbol.clone(),
                 price: mid * (1.0 + target/2.0),
                 quantity: 0.001,
@@ -55,6 +56,7 @@ impl MM {
         else if prev_short_ema >= prev_long_ema && short_ema_val < long_ema_val {
             return Some(OrderReq {
                 id: Uuid::new_v4().to_string(),
+                exchange,
                 symbol: tob.symbol.clone(),
                 price: mid * (1.0 - target/2.0),
                 quantity: 0.001,
@@ -66,6 +68,7 @@ impl MM {
         if *rsi_val < 30.0 {
             return Some(OrderReq {
                 id: Uuid::new_v4().to_string(),
+                exchange,
                 symbol: tob.symbol.clone(),
                 price: mid * (1.0 + target/2.0),
                 quantity: 0.001,
@@ -76,6 +79,7 @@ impl MM {
         else if *rsi_val > 70.0 {
             return Some(OrderReq {
                 id: Uuid::new_v4().to_string(),
+                exchange,
                 symbol: tob.symbol.clone(),
                 price: mid * (1.0 - target/2.0),
                 quantity: 0.001,
@@ -87,6 +91,7 @@ impl MM {
         if prev_macd <= prev_signal && macd_val > signal_val {
             return Some(OrderReq {
                 id: Uuid::new_v4().to_string(),
+                exchange,
                 symbol: tob.symbol.clone(),
                 price: mid * (1.0 + target/2.0),
                 quantity: 0.001,
@@ -97,6 +102,7 @@ impl MM {
         else if prev_macd >= prev_signal && macd_val < signal_val {
             return Some(OrderReq {
                 id:Uuid::new_v4().to_string(),
+                exchange,
                 symbol: tob.symbol.clone(),
                 price: mid * (1.0 - target/2.0),
                 quantity: 0.001,
@@ -108,6 +114,7 @@ impl MM {
         if latest_price < *lower_band {
             return Some(OrderReq {
                 id: Uuid::new_v4().to_string(),
+                exchange,
                 symbol: tob.symbol.clone(),
                 price: mid * (1.0 + target/2.0),
                 quantity: 0.001,
@@ -118,6 +125,7 @@ impl MM {
         else {
             return Some(OrderReq {
                 id: Uuid::new_v4().to_string(),
+                exchange,
                 symbol: tob.symbol.clone(),
                 price: mid * (1.0 - target/2.0),
                 quantity: 0.001,
