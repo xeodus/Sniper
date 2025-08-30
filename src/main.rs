@@ -60,13 +60,13 @@ async fn main() -> anyhow::Result<()> {
                     .unwrap();
 
                 if menu[selection] == "Quit" {
-                    println!("Existing CLI...");
+                    println!("Exiting CLI... ");
                     break;
                 }
 
                 let exchanges = vec!["KuCoin", "Binance"];
                 let excg_selection = Select::with_theme(&ColorfulTheme::default())
-                    .with_prompt("Choosing exchange...")
+                    .with_prompt("Choosing exchange")
                     .items(&exchanges)
                     .default(0)
                     .interact()
@@ -79,7 +79,7 @@ async fn main() -> anyhow::Result<()> {
                 };
 
                 let sym_selection = Select::with_theme(&ColorfulTheme::default())
-                    .with_prompt("Choosing asset...")
+                    .with_prompt("Choosing asset")
                     .items(&symbols)
                     .default(0)
                     .interact()
@@ -87,17 +87,17 @@ async fn main() -> anyhow::Result<()> {
                 let symbol = symbols[sym_selection].clone();
 
                 let price = Input::new()
-                    .with_prompt("Enter price...")
+                    .with_prompt("Enter price")
                     .interact_text()
                     .unwrap();
                 let quantity = Input::new()
-                    .with_prompt("Enter quantity...")
+                    .with_prompt("Enter quantity")
                     .interact_text()
                     .unwrap();
 
                 let sides = vec!["Buy", "Sell"];
                 let side_selection = Select::with_theme(&ColorfulTheme::default())
-                    .with_prompt("Choosing side...")
+                    .with_prompt("Choosing side: ")
                     .items(&sides)
                     .default(0)
                     .interact()

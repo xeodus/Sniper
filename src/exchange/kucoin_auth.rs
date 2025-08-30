@@ -8,6 +8,7 @@ use tokio_stream::StreamExt;
 use tokio_tungstenite::{connect_async, tungstenite::Message, 
     MaybeTlsStream, WebSocketStream
 };
+
 use crate::{data::*, exchange::{config::Exchangecfg,
     RestClient, StreamBook}, 
     utils::signature
