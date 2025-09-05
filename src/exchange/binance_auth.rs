@@ -24,8 +24,21 @@ impl Binance {
         }
     }
 
-    pub async handle_order_update(&mut self, ordermap: &mut HashMap<String, GridOrder>, data: &Value, symbol: &str) {
+    pub async handle_order_update(
+        &mut self, 
+        ordermap: &mut HashMap<String, GridOrder>, 
+        data: &Value, 
+        symbol: &str)
+    {
+        let client_oid = data.get("ClientOid").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let status = data.get("data").and_then(|s| s.as_str()).unwrap_or("");
+        let side = data.get("side").and_then(|v| v.as_str()).unwrap_or("");
 
+        if status == "filled" || status == "done" {
+            if let Some(order) = ordermap.get(&client_oid) {
+                    
+            }
+        }
     }
 
     pub async fn ws_connect(req: &OrderReq) -> Result<()> {
