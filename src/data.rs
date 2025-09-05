@@ -24,6 +24,7 @@ pub struct OrderReq {
     pub id: String,
     pub exchange: Exchange,
     pub symbol: String,
+    pub type_: String,
     pub price: f64,
     pub quantity: f64,
     pub side: Side,
@@ -41,7 +42,7 @@ pub struct Candles {
 
 pub struct TrendDetector {
     pub alpha_slow: f64,
-    pub alpha_high: f64,
+    pub alpha_fast: f64,
     pub alpha_atr: f64,
     pub ema_slow: f64,
     pub ema_fast: f64,
@@ -49,6 +50,13 @@ pub struct TrendDetector {
     pub prev_closed: f64,
     pub initialized: bool,
     pub k_atr: f64
+}
+
+pub struct GridOrder {
+    pub client_id: String,
+    pub level: f64,
+    pub side: Side,
+    pub active: bool
 }
 
 /*pub struct OrderUpdate {

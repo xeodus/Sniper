@@ -24,6 +24,10 @@ impl Binance {
         }
     }
 
+    pub async handle_order_update(&mut self, ordermap: &mut HashMap<String, GridOrder>, data: &Value, symbol: &str) {
+
+    }
+
     pub async fn ws_connect(req: &OrderReq) -> Result<()> {
         let url = "wss://ws-api.binance.com:443/ws-api/v3";
         let (ws_stream, _) = connect_async(url).await?;
