@@ -1,18 +1,17 @@
 use async_trait::async_trait;
 use chrono::Utc;
-use futures_util::SinkExt;
+use futures_util::{SinkExt, StreamExt};
 use reqwest::{header::CONTENT_TYPE, Client};
 use serde_json::json;
 use tokio::net::TcpStream;
-use tokio_stream::StreamExt;
+use anyhow::Result;
 use tokio_tungstenite::{connect_async, tungstenite::Message, 
     MaybeTlsStream, WebSocketStream
 };
+use uuid::Uuid;
 
 use crate::{data::*, exchange::{config::Exchangecfg,
-    RestClient, StreamBook}, 
-    utils::signature
-};
+    RestClient}, utils::signature};
 
 pub struct KuCoin {
     pub http: Client,
@@ -21,64 +20,45 @@ pub struct KuCoin {
 }
 
 impl KuCoin {
-    pub async fn new(cfg: Exchangecfg, symbol: &str) -> anyhow::Result<Self> {
-        let token = KuCoin::get_ws_token(&cfg).await?;
-        let http = Client::new();
-        let ws_url = format!("wss://ws-api.kucoin.com/endpoint?token={}", token);
-        let (ws, _) = connect_async(ws_url).await?;
-        let mut kc = KuCoin { http, ws, cfg };
-        let _ = kc.subscribe(symbol).await;
-        Ok(kc)
+
+    pub fn new(cfg: Exchangecfg, ws: WebSocketStream<MaybeTlsStream<TcpStream>>) -> Self {
+        Self {
+            http: Client::new(),
+            cfg,
+            ws
+        }
     }
 
-    pub async fn get_ws_token(cfg: &Exchangecfg) -> anyhow::Result<String> {
-        let url = "https://api.kucoin.com/api/v1/bullet-private";
-        let now = Utc::now().timestamp_millis().to_string();
-        let sign = signature(cfg.secret_key.as_bytes(), &format!("{}{}", now, "GET/api/v1/bullet-private"));
-        let client = Client::new();
-        let response = client.post(url)
-            .header("KC-API-KEY", &cfg.api_key)
-            .header("KC-API-SIGN", sign)
-            .header("KC-SECRET-KEY", cfg.secret_key.clone())
-            //.header("KC-API-PASSPHRASE", cfg.passphrase.clone())
-            .header("KC-API-VERSION", "2")
-            .send()
-            .await?;
+    pub async fn ws_connect(req: &OrderReq) -> Result<()> {
+        let url = "https://api-futures.kucoin.com/api/v1/bullet-private";
+        let (ws_stream, _) = connect_async(url).await?;
+        let (mut tx, mut rx) = ws_stream.split();
 
-        let response_json = response.json::<serde_json::Value>().await?;
-        Ok(response_json["data"]["token"].to_string())
-    }
-
-    async fn subscribe(&mut self, symbol: &str) -> anyhow::Result<()> {
-        let msg = json!({
-            "id": 1,
-            "type": "subscribe",
-            "topic": format!("/market/ticker:{}", symbol),
+        let subscribe = json!({
+            "id": Uuid::new_v4().to_string(),
+            "type": "subscriber",
+            "topic": format!("/market/level2: {}", req.id.to_string()),
             "response": true
         });
-        let _ = self.ws.send(Message::text(msg.to_string())).await;
-        Ok(())
-    }
-}
 
-#[async_trait]
-impl StreamBook for KuCoin {
-    async fn next_tob(&mut self) -> anyhow::Result<TopOfBook> {
-        loop {
-            if let Some(Ok(Message::Text(t))) = self.ws.next().await {
-                let value: serde_json::Value = serde_json::from_str(&t)?;
-                if value["type"] == "message" {
-                    let d = &value["data"];
-                    return Ok(TopOfBook {
-                        exchange: Exchange::KuCoin,
-                        symbol: d["symbol"].to_string(),
-                        bid: d["bestBid"].as_f64().unwrap(),
-                        ask: d["bestAsk"].as_f64().unwrap(),
-                        timestamp: d["timestamp"].as_i64().unwrap()
-                    });
-                }
+        tx.send(Message::Text(subscribe.to_string())).await?;
+
+        while let Some(msg) = rx.next().await {
+            let msg_ = msg?;
+            
+            match msg_ {
+                Message::Text(txt) => {
+                    println!("{}", txt);
+                },
+                Message::Ping(_) | Message::Pong(_) => {},
+                Message::Close(_) => {
+                    log::warn!("WebSocket connection closed..");
+                    break;
+                },
+                _ => {}
             }
         }
+        Ok(())
     }
 }
 
@@ -86,11 +66,15 @@ impl StreamBook for KuCoin {
 impl RestClient for KuCoin {
     async fn place_order(&self, req: &OrderReq) -> Result<String, anyhow::Error> {
         let body = json!({
-            "clienOid": req.id.to_string(),
+            "clientOid": req.id.to_string(),
             "symbol": req.symbol,
             "price": req.price.to_string(),
             "type": "limit",
-            "quantity": req.quantity.to_string(),
+            "leverage": 10,
+            "reduceOnly": false,
+            "remark": "order remarks",
+            "size": req.quantity.to_string(),
+            "marginMode": "ISOLATED",
             "side": match req.side {
                 Side::Buy => "Buy",
                 Side::Sell => "Sell"
@@ -98,20 +82,20 @@ impl RestClient for KuCoin {
             "timestamp": req.timestamp.to_string()
         });
 
-        let url = "https://api.kucoin.com/api/v1/orders";
+        let url = "https://api-futures.kucoin.com/api/v1/orders";
         let body_str = body.to_string();
         let now = Utc::now().timestamp_millis().to_string();
         let sign = signature(self.cfg.secret_key.as_bytes(),
             &format!("{}{}{}{}", now, "POST", "/api/v1/orders", body_str));
 
         let response = self.http.post(url)
-            .header(CONTENT_TYPE, "/application/json")
+            .header(CONTENT_TYPE, "application/json")
             .header("KC-API-KEY", &self.cfg.api_key)
             .header("KC-API-SIGN", sign)
             .header("KC-API-TIMESTAMP", now)
-            .header("KC-SECRET-KEY", &self.cfg.secret_key)
+            //.header("KC-SECRET-KEY", &self.cfg.secret_key)
             //.header("KC-API-PASSPHRASE", &self.cfg.passphrase)
-            .header("KC-API-VERSION", "2")
+            .header("KC-API-VERSION", "3")
             .body(body_str)
             .send()
             .await?;
@@ -127,22 +111,34 @@ impl RestClient for KuCoin {
         Ok(res)
     }
 
-    async fn cancel_order(&self, id: &str) -> anyhow::Result<()> {
-        let url = format!("https://api.kucoin.com/api/v1/orders/{}", id);
+    async fn cancel_order(&self, req: &OrderReq) -> Result<String, anyhow::Error> {
+        let body = json!({
+            "clientOid": req.id.to_string(),
+            "symbol": req.symbol.to_string()
+        });
+        let body_str = body.to_string();
+        let url = "https://api-futures.kucoin.com";
         let now = Utc::now().timestamp_millis().to_string();
         let sign = signature(self.cfg.secret_key.as_bytes(),
-            &format!("{}{}{}{}", now, "DELETE", format!("/api/v1/orders/{}", id), ""));
+            &format!("{}{}{}{}", now, "DELETE", format!("/api/v1/client-order/{}", req.id.to_string()), body_str));
         
-        self.http.delete(url)
+        let response = self.http.delete(url)
             .header("KC-API-KEY", &self.cfg.api_key)
             .header("KC-API-TIMESTAMP", now)
             .header("KC-API-SIGN", sign)
-            .header("KC-SECRET-KEY", &self.cfg.secret_key)
+            //.header("KC-SECRET-KEY", &self.cfg.secret_key)
             //.header("KC-API-PASSPHRASE", &self.cfg.passphrase)
-            .header("KC-API-VERSION", "2")
+            .header("KC-API-VERSION", "3")
             .send()
             .await?;
 
-        Ok(())
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!(format!("Cannot cancel the order: {}", response.text().await?)));
+        }
+
+        let val = response.json::<serde_json::Value>().await?;
+        let res = val.to_string();
+
+        Ok(res)
     }
 }

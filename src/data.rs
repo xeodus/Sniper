@@ -30,13 +30,25 @@ pub struct OrderReq {
     pub timestamp: i64
 }
 
-#[derive(Debug, Deserialize, Clone)]
-pub struct TopOfBook {
-    pub exchange: Exchange,
-    pub symbol: String,
-    pub bid: f64,
-    pub ask: f64,
-    pub timestamp: i64
+pub struct Candles {
+    pub timestamp: i64,
+    pub open: f64,
+    pub high: f64,
+    pub low: f64,
+    pub close: f64,
+    pub volume: f64
+}
+
+pub struct TrendDetector {
+    pub alpha_slow: f64,
+    pub alpha_high: f64,
+    pub alpha_atr: f64,
+    pub ema_slow: f64,
+    pub ema_fast: f64,
+    pub atr: f64,
+    pub prev_closed: f64,
+    pub initialized: bool,
+    pub k_atr: f64
 }
 
 /*pub struct OrderUpdate {
@@ -44,47 +56,8 @@ pub struct TopOfBook {
     pub status: OrderStatus
 }*/
 
-pub struct TechnicalIndicators;
-
-/*#[derive(Deserialize,Clone)]
-pub struct BotState {
-    pub top_of_book: Vec<TopOfBook>,
-    pub orders: Vec<OrderReq>,
-    pub log: Vec<String>
+pub enum Trend {
+    UpTrend,
+    DownTrend,
+    SideChop
 }
-
-impl BotState {
-    pub fn new() -> Self {
-        Self {
-            top_of_book: Vec::new(),
-            orders: Vec::new(),
-            log: Vec::new()
-        }
-    }
-
-    pub fn add_tob(&mut self, tob: TopOfBook) {
-        self.top_of_book.push(tob);
-
-        if self.top_of_book.len() > 50 {
-            self.top_of_book.drain(0..self.top_of_book.len() - 50);
-        }
-    }
-
-    pub fn add_order(&mut self, order: OrderReq) {
-        self.orders.push(order);
-
-        if self.orders.len() > 50 {
-            self.orders.drain(0..self.orders.len() - 50);
-        }
-    }
-
-    pub fn add_log(&mut self, log: String) {
-        self.log.push(log);
-
-        if self.log.len() > 50 {
-            self.log.drain(0..self.log.len() - 50);
-        }
-    }
-}
-
-pub type SharedState = Arc<Mutex<BotState>>;*/
