@@ -9,12 +9,16 @@ impl OrderStore {
     pub fn init_db(path: &str) -> Result<Self> {
         let connection = Connection::open(path)?;
         connection.execute_batch(
-            "CREATE TABLE IF NOT EXISTS orders (
+            "CREATE TABLE IF NOT EXISTS grid_orders (
                 client_oid TEXT PRIMARY KEY,
-                symbol TEXT,
-                side TEXT,
-                price REAL,
-                status TEXT
+                symbol TEXT NOT NULL,
+                level REAL NOT NULL,
+                side TEXT NOT NULL,
+                quantity REAL NOT NULL,
+                active BOOLEAN NOT NULL DEFAULT 1,
+                status TEXT NOT NULL DEFAULT 'new',
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
             )"
         )?;
         Ok(Self { conn: connection })
@@ -30,10 +34,23 @@ impl OrderStore {
             OrderStatus::New => "new",
             OrderStatus::Rejected => "rejected"
         };
+        let now = chrono::Utc::now().timestamp();
 
-        self.conn.execute("INSERT OR REPLACE INTO orders (client_oid, symbol, side, price, quantity, active, status)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6)", 
-            params![o.client_oid.clone(), o.symbol.clone(), side, o.level, o.quantity, status])?;
+        self.conn.execute(
+            "INSERT OR REPLACE INTO grid_orders (client_oid, symbol, level, side, quantity, active, status, created_at, updated_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)", 
+            params![
+                o.client_oid.clone(), 
+                o.symbol.clone(), 
+                o.level, 
+                side, 
+                o.quantity, 
+                o.active, 
+                status,
+                now,
+                now
+            ]
+        )?;
         Ok(())
     }
 
@@ -43,13 +60,17 @@ impl OrderStore {
             OrderStatus::Filled => "filled",
             OrderStatus::Rejected => "rejected"
         };
-        self.conn.execute("UPDATE orders SET status = ?2 WHERE client_oid = ?1", params![o.client_oid, status_])?;
+        let now = chrono::Utc::now().timestamp();
+        self.conn.execute(
+            "UPDATE grid_orders SET status = ?2, updated_at = ?3 WHERE client_oid = ?1", 
+            params![o.client_oid, status_, now]
+        )?;
         Ok(())
     }
 
     pub fn db_load_orders(conn: &Connection) -> Result<Vec<GridOrder>> {
         let mut stmt = conn.prepare("SELECT 
-            client_oid, symbol, price, side, quantity, active, status FROM grid_orders where status = 'open'")?;
+            client_oid, symbol, level, side, quantity, active, status FROM grid_orders WHERE active = 1 AND status IN ('new', 'filled')")?;
         let mut rows = stmt.query([])?;
         let mut v = Vec::new();
         while let Some(r) = rows.next()? {
@@ -62,7 +83,7 @@ impl OrderStore {
                     Side::Buy
                 }
             };
-            let status_init: String = r.get(5)?;
+            let status_init: String = r.get(6)?;
             let status = match status_init.as_str() {
                 "new" => OrderStatus::New,
                 "filled" => OrderStatus::Filled,
@@ -78,8 +99,8 @@ impl OrderStore {
                 symbol: r.get(1)?,
                 level: r.get(2)?,
                 side,
-                active: r.get(4)?,
-                quantity: r.get(5)?,
+                active: r.get(5)?,
+                quantity: r.get(4)?,
                 status
             });
         }

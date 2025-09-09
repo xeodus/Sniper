@@ -233,21 +233,17 @@ impl RestClient for KuCoin {
         let body = json!({
             "clientOid": req.id.to_string(),
             "symbol": req.symbol,
-            "price": req.price.to_string(),
-            "type": "limit",
-            "leverage": 10,
-            "reduceOnly": false,
-            "remark": "order remarks",
-            "size": req.quantity.to_string(),
-            "marginMode": "ISOLATED",
             "side": match req.side {
-                Side::Buy => "Buy",
-                Side::Sell => "Sell"
+                Side::Buy => "buy",
+                Side::Sell => "sell"
             },
-            "timestamp": req.timestamp.to_string()
+            "type": "limit",
+            "price": req.price.to_string(),
+            "size": req.quantity.to_string(),
+            "timeInForce": "GTC"
         });
 
-        let url = "https://api-futures.kucoin.com/api/v1/orders";
+        let url = "https://api.kucoin.com/api/v1/orders";
         let body_str = body.to_string();
         let now = Utc::now().timestamp_millis().to_string();
         let sign = signature(self.cfg.secret_key.as_bytes(),
@@ -258,9 +254,8 @@ impl RestClient for KuCoin {
             .header("KC-API-KEY", &self.cfg.api_key)
             .header("KC-API-SIGN", sign)
             .header("KC-API-TIMESTAMP", now)
-            //.header("KC-SECRET-KEY", &self.cfg.secret_key)
-            //.header("KC-API-PASSPHRASE", &self.cfg.passphrase)
-            .header("KC-API-VERSION", "3")
+            .header("KC-API-PASSPHRASE", "") // Add passphrase if needed
+            .header("KC-API-VERSION", "2")
             .body(body_str)
             .send()
             .await?;
@@ -277,23 +272,17 @@ impl RestClient for KuCoin {
     }
 
     async fn cancel_order(&self, req: &OrderReq) -> Result<String, anyhow::Error> {
-        let body = json!({
-            "clientOid": req.id.to_string(),
-            "symbol": req.symbol.to_string()
-        });
-        let body_str = body.to_string();
-        let url = "https://api-futures.kucoin.com";
+        let url = format!("https://api.kucoin.com/api/v1/orders/{}", req.id);
         let now = Utc::now().timestamp_millis().to_string();
         let sign = signature(self.cfg.secret_key.as_bytes(),
-            &format!("{}{}{}{}", now, "DELETE", format!("/api/v1/client-order/{}", req.id.to_string()), body_str));
+            &format!("{}{}{}", now, "DELETE", format!("/api/v1/orders/{}", req.id)));
         
-        let response = self.http.delete(url)
+        let response = self.http.delete(&url)
             .header("KC-API-KEY", &self.cfg.api_key)
             .header("KC-API-TIMESTAMP", now)
             .header("KC-API-SIGN", sign)
-            //.header("KC-SECRET-KEY", &self.cfg.secret_key)
-            //.header("KC-API-PASSPHRASE", &self.cfg.passphrase)
-            .header("KC-API-VERSION", "3")
+            .header("KC-API-PASSPHRASE", "") // Add passphrase if needed
+            .header("KC-API-VERSION", "2")
             .send()
             .await?;
 

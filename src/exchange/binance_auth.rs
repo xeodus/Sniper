@@ -227,32 +227,34 @@ impl Binance {
 impl RestClient for Binance {
     async fn place_order(&self, req: &OrderReq) -> Result<String, anyhow::Error> {
         let body = json!({
-            "clientOid": req.id.to_string(),
             "symbol": req.symbol,
-            "price": req.price.to_string(),
-            "type": req.type_.clone(),
-            "quantity": req.quantity.to_string(),
             "side": match req.side {
-                Side::Buy => "Buy",
-                Side::Sell => "Sell"
+                Side::Buy => "BUY",
+                Side::Sell => "SELL"
             },
-            "timestamp": req.timestamp.to_string()
+            "type": "LIMIT",
+            "timeInForce": "GTC",
+            "quantity": req.quantity.to_string(),
+            "price": req.price.to_string(),
+            "newClientOrderId": req.id.to_string(),
+            "timestamp": req.timestamp
         });
 
-        let url = "wss://ws-api.binance.com:443/ws-api/v3";       
+        let url = "https://api.binance.com/api/v3/order";       
         let body_str = body.to_string();
         let now = Utc::now().timestamp_millis().to_string();
-        let sign = signature(self.cfg.secret_key.as_bytes(),
-            &format!("{}{}{}{}", now, "POST", "/ws-api/v3", body_str));
-        let response = self.http.post(url)
-            .header(CONTENT_TYPE, "application/json")
-            .header("BNB-API-KEY", &self.cfg.api_key)
-            .header("BNB-API-SIGN", sign)
-            .header("BNB-API-TIMESTAMP", now)
-            //.header("BNB-SECRET-KEY", &self.cfg.secret_key)
-            //.header("KC-API-PASSPHRASE", &self.cfg.passphrase)
-            .header("BNB-API-VERSION", "2")
-            .body(body_str)
+        let query_string = format!("symbol={}&side={}&type=LIMIT&timeInForce=GTC&quantity={}&price={}&newClientOrderId={}&timestamp={}",
+            req.symbol,
+            match req.side { Side::Buy => "BUY", Side::Sell => "SELL" },
+            req.quantity,
+            req.price,
+            req.id,
+            now
+        );
+        let sign = signature(self.cfg.secret_key.as_bytes(), &query_string);
+        
+        let response = self.http.post(&format!("{}?{}&signature={}", url, query_string, sign))
+            .header("X-MBX-APIKEY", &self.cfg.api_key)
             .send()
             .await?;
 
@@ -268,24 +270,17 @@ impl RestClient for Binance {
     }
 
     async fn cancel_order(&self, req: &OrderReq) -> Result<String> {
-        let body = json!({
-            "clientOid": req.id.to_string(),
-            "symbol": req.symbol.to_string()
-        });
-
-        let body_str = body.to_string();
         let url = "https://api.binance.com/api/v3/order";
         let now = Utc::now().timestamp_millis().to_string();
-        let sign = signature(self.cfg.secret_key.as_bytes(),
-            &format!("{}{}{}{}", now, "DELETE", format!("/api/v3/order/id={}", req.id.to_string()), body_str));
+        let query_string = format!("symbol={}&origClientOrderId={}&timestamp={}",
+            req.symbol,
+            req.id,
+            now
+        );
+        let sign = signature(self.cfg.secret_key.as_bytes(), &query_string);
         
-        let response = self.http.delete(url)
-            .header("BNB-API-KEY", &self.cfg.api_key)
-            .header("BNB-API-TIMESTAMP", now)
-            .header("BNB-API-SIGN", sign)
-            //.header("BNB-SECRET-KEY", &self.cfg.secret_key)
-            //.header("KC-API-PASSPHRASE", &self.cfg.passphrase)
-            .header("BNB-API-VERSION", "2")
+        let response = self.http.delete(&format!("{}?{}&signature={}", url, query_string, sign))
+            .header("X-MBX-APIKEY", &self.cfg.api_key)
             .send()
             .await?;
 

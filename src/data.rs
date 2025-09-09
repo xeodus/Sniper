@@ -1,4 +1,5 @@
 use serde::Deserialize;
+pub use crate::indicators::TechnicalIndicators;
 
 #[derive(Debug, Deserialize, Clone)]
 pub enum Side {
