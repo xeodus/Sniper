@@ -12,10 +12,9 @@ pub enum Exchange {
     Binance
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Clone)]
 pub enum OrderStatus {
     New,
-    Sent,
     Filled,
     Rejected
 }
@@ -28,9 +27,10 @@ pub struct OrderReq {
     pub price: f64,
     pub quantity: f64,
     pub side: Side,
-    pub timestamp: i64
+    pub timestamp: i64,
 }
 
+#[derive(Debug, Clone)]
 pub struct Candles {
     pub timestamp: i64,
     pub open: f64,
@@ -52,11 +52,22 @@ pub struct TrendDetector {
     pub k_atr: f64
 }
 
+#[derive(Debug, Clone)]
 pub struct GridOrder {
-    pub client_id: String,
+    pub client_oid: String,
+    pub symbol: String,
     pub level: f64,
     pub side: Side,
-    pub active: bool
+    pub active: bool,
+    pub quantity: f64,
+    pub status: OrderStatus
+}
+
+#[derive(Debug, Clone)]
+pub struct BotState {
+    pub trend: Trend,
+    pub open_orders: Vec<GridOrder>,
+    pub pnl: f64
 }
 
 /*pub struct OrderUpdate {
@@ -64,6 +75,7 @@ pub struct GridOrder {
     pub status: OrderStatus
 }*/
 
+#[derive(Debug, Clone)]
 pub enum Trend {
     UpTrend,
     DownTrend,

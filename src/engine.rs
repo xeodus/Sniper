@@ -40,7 +40,7 @@ impl TrendDetector {
         }
 
         let diff = self.ema_fast - self.ema_slow;
-        let threshold = self.k_atr * self.atr.max(10.pow(-9));
+        let threshold = self.k_atr * self.atr.max(10_f64.powi(-9));
         let trend = if diff > threshold {
             Trend::UpTrend
         }
