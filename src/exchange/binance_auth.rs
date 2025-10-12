@@ -1,112 +1,289 @@
+use anyhow::Ok;
 use async_trait::async_trait;
 use chrono::Utc;
-use reqwest::{header::CONTENT_TYPE, Client};
-use serde_json::json;
-use tokio::net::TcpStream;
-use tokio_stream::StreamExt;
-use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
-use crate::{data::*, exchange::{config::Exchangecfg, RestClient, StreamBook}, utils::signature};
+use uuid::Uuid;
+use reqwest::Client;
+use serde_json::{json, Value};
+use std::collections::{HashMap, VecDeque};
+use futures_util::{SinkExt, StreamExt};
+use tokio_tungstenite::{connect_async, tungstenite::Message};
+use crate::{config::ExchangeCfg, 
+    data::{Candles, Exchange, GridOrder, OrderReq, OrderStatus, Side, Trend, TrendDetector}, 
+    exchange::config::{signature, RestClient}
+};
 
-pub struct Binance {
+pub struct BinanceAuth {
     pub http: Client,
-    pub cfg: Exchangecfg,
-    pub ws: WebSocketStream<MaybeTlsStream<TcpStream>>
+    pub cfg: ExchangeCfg
 }
 
-impl Binance {
-    pub async fn new(cfg: Exchangecfg) -> anyhow::Result<Self> {
-        let url = "wss://ws-api.binance.com:443/ws-api/v3";
-        let (ws, _) = connect_async(url).await?;
-
-        Ok(Self {
+impl BinanceAuth {
+    pub fn new(cfg: ExchangeCfg) -> Self {
+        Self {
             http: Client::new(),
-            cfg,
-            ws
-        })
+            cfg
+        }
     }
-}
 
-#[async_trait]
-impl StreamBook for Binance {
-    async fn next_tob(&mut self) -> anyhow::Result<TopOfBook> {
-        loop {
-            if let Some(Ok(Message::Text(t))) = self.ws.next().await {
-                let value: serde_json::Value = serde_json::from_str(&t)?;
-                if value["type"] == "message" {
-                    let d = &value["data"];
-                    return Ok(TopOfBook {
-                        exchange: Exchange::KuCoin,
-                        symbol: d["symbol"].to_string(),
-                        bid: d["bestBid"].as_f64().unwrap(),
-                        ask: d["bestAsk"].as_f64().unwrap(),
-                        timestamp: d["timestamp"].as_i64().unwrap()
-                    });
+    pub async fn handle_market_data_bn(&mut self, ordermap: &mut HashMap<String, GridOrder>, data: &Value, symbol: &str) {
+        let client_oid = ordermap.get("client_oid").and_then(|v| Some(v.client_oid.clone())).unwrap();
+        let side = ordermap.get("side").and_then(|v| Some(v.side.clone())).unwrap();
+        let status = data.get("status").and_then(|v| Some(v.as_str().unwrap())).unwrap();
+
+        match status {
+            "new" => OrderStatus::New,
+            "filled" => OrderStatus::Filled,
+            "rejected" => OrderStatus::Rejected,
+            &_ => todo!()
+        };
+        
+        if status == "new" || status == "filled" {
+            if let Some(order) = ordermap.get(&client_oid) {
+                log::info!("Placing the gird order on Binance: {:?}", order);
+                // Placing opposite side order
+                let opposite_side = match side {
+                    Side::Buy => "Sell",
+                    Side::Sell => "Buy"
+                };
+
+                let next_level = if opposite_side == "Sell" {
+                    order.level * 1.01
+                }
+                else {
+                    order.level * 0.99
+                };
+
+                let req = OrderReq {
+                    id: client_oid.clone(),
+                    symbol: symbol.to_string(),
+                    exchange: Exchange::Binance,
+                    side: side.clone(),
+                    price: next_level,
+                    size: 0.01,
+                    type_: "limit".to_string(),
+                    timestamp: Utc::now().timestamp_millis()
+                };
+
+                if let Err(e) = self.place_order(&req).await {
+                    log::warn!("Cannot place the order and handle market instances on Binance: {}", e);
+                }
+                else {
+                    ordermap.insert(client_oid.clone(),
+                        GridOrder {
+                            client_oid: client_oid.clone(),
+                            symbol: req.symbol.clone(),
+                            level: next_level,
+                            size: req.size,
+                            active: true,
+                            side: side.clone(),
+                            status: match status {
+                                "new" => OrderStatus::New,
+                                "filled" => OrderStatus::Filled,
+                                "rejected" => OrderStatus::Rejected,
+                                &_ => {
+                                    log::warn!("Invalid status received from Binance exchange marking as rejected");
+                                    OrderStatus::Rejected
+                                }
+                            }
+                        }
+                    );
                 }
             }
         }
+        else if status == "rejected" {
+            log::warn!("Order rejected: {:?}", OrderStatus::Rejected);
+        }
+    }
+
+    pub async fn ws_connect(&mut self, req: &OrderReq) -> anyhow::Result<()> {
+        let url = "wss://binance.com:443/ws-api/v3";
+        let (ws_stream, _) = connect_async(url).await?;
+        // Channel created to send and receive ws messages
+        let (mut tx, mut rx) = ws_stream.split();
+
+        let topic = format!("/market/candles: {}{}", req.symbol, req.timestamp);
+        let subscribe = json!({
+            "id": Uuid::new_v4().to_string(),
+            "type": "subscriber",
+            "topic": topic,
+            "response": true
+        });
+
+        tx.send(Message::Text(subscribe.to_string())).await?;
+
+        log::info!("subscribed to: {}", topic);
+
+        const MAX_CANDLES: usize = 500;
+        let mut candles: VecDeque<Candles> = VecDeque::with_capacity(MAX_CANDLES);
+        let mut trend = TrendDetector::new(12, 26, 14, 0.6);
+        let mut grid_orders: HashMap<String, GridOrder> = HashMap::new();
+        let mut grid_active = false;
+
+        // Receiving message stream
+        while let Some(msg) = rx.next().await {
+            let msg_ = msg?;
+            if let Message::Text(txt) = msg_ {
+                // Deserialize the received json message
+                let val: Value = serde_json::from_str(&txt).unwrap();
+
+                if let Some(topic_) = val.get("topic").and_then(|v| v.as_str()) {
+                    if topic_.starts_with("/markets/candles") {
+                        if let Some(data) = val.get("data") {
+                            if let Some(arr) = data.as_array() {
+                                let c = arr; 
+                                if c.len() >= 6 {
+                                    let candle = Candles {
+                                        timestamp: c[0].as_str().unwrap().parse().unwrap_or(0),
+                                        open: c[1].as_str().unwrap().parse().unwrap_or(0.0),
+                                        high: c[2].as_str().unwrap().parse().unwrap_or(0.0),
+                                        low: c[3].as_str().unwrap().parse().unwrap_or(0.0),
+                                        close: c[4].as_str().unwrap().parse().unwrap_or(0.0),
+                                        volume: c[5].as_str().unwrap().parse().unwrap_or(0.0)
+                                    };
+                                    if candles.len() == MAX_CANDLES { candles.pop_front(); }
+                                    candles.push_back(candle.clone());
+
+                                    let (trend, _, ema_slow, atr) = trend.update(&candle);
+
+                                    match trend {
+                                        Trend::SideChop => {
+                                            if !grid_active {
+                                                let center = ema_slow;
+                                                let half = 4.0 * atr;
+                                                let grid_upper = half + center;
+                                                let grid_lower = center - half;
+                                                let grid_level = TrendDetector::compute_generic_levels(grid_upper, 
+                                                    grid_lower, 10);
+
+                                                for level in &grid_level {
+                                                    let side = if *level < center {
+                                                        "Buy"
+                                                    }
+                                                    else {
+                                                        "Sell"
+                                                    };
+                                                    let client_oid = Uuid::new_v4().to_string();
+
+                                                    let req = OrderReq {
+                                                        id: client_oid.clone(),
+                                                        symbol: req.symbol.clone(),
+                                                        exchange: Exchange::Binance,
+                                                        price: req.price,
+                                                        size: req.size,
+                                                        type_: req.type_.clone(),
+                                                        side: match side {
+                                                            "Buy" => Side::Buy,
+                                                            "Sell" => Side::Sell,
+                                                            &_ => todo!()
+                                                        },
+                                                        timestamp: Utc::now().timestamp_millis()
+                                                    };
+
+                                                    if let Err(e) = self.place_order(&req).await {
+                                                        log::warn!("Cannot place order on Binance: {}", e);
+                                                    }
+                                                    else {
+                                                        grid_orders.insert(client_oid.clone(),
+                                                            GridOrder {
+                                                                client_oid,
+                                                                symbol: req.symbol.clone(),
+                                                                level: *level,
+                                                                size: req.size,
+                                                                active: true,
+                                                                side: match side {
+                                                                    "Buy" => Side::Buy,
+                                                                    "Sell" => Side::Sell,
+                                                                    &_ => todo!()
+                                                                },
+                                                                status: OrderStatus::New
+                                                            }
+                                                        );
+                                                    }
+                                                }
+                                                log::info!("Grids enabled with levels: {}", grid_level.len());
+                                            }
+                                        },
+                                        Trend::UpTrend | Trend::DownTrend => {
+                                            if grid_active {
+                                                for (id, order) in grid_orders.iter() {
+                                                    let _ = self.cancel_order(req).await;
+                                                    log::info!("Cancelled order at level: {} for id: {}", order.level, id);
+                                                }
+                                                grid_orders.clear();
+                                                grid_active = false;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if topic.contains("order") {
+                        if let Some(data) = val.get("data") {
+                            self.handle_market_data_bn(&mut grid_orders, data, &req.symbol).await;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
 #[async_trait]
-impl RestClient for Binance {
+impl RestClient for BinanceAuth {
     async fn place_order(&self, req: &OrderReq) -> Result<String, anyhow::Error> {
         let body = json!({
-            "clienOid": req.id.to_string(),
             "symbol": req.symbol,
-            "price": req.price.to_string(),
-            "type": "limit",
-            "quantity": req.quantity.to_string(),
             "side": match req.side {
                 Side::Buy => "Buy",
                 Side::Sell => "Sell"
             },
+            "type": req.type_.to_string(),
+            "timeInForce": "GTC",
+            "size": req.size.to_string(),
+            "price": req.price.to_string(),
+            "newClientOrderId": req.id.to_string(),
             "timestamp": req.timestamp.to_string()
         });
 
-        let url = "wss://ws-api.binance.com:443/ws-api/v3";       
+        let url = "https://api.binance.com/api/v3/order";
         let body_str = body.to_string();
+        let query_string = format!("{}", body_str);
+        let sign = signature(self.cfg.secret_key.as_bytes(), &query_string).await;
+        let response = self.http.post(format!("{}?{}&signature={:?}", url, query_string, sign))
+            .header("X-MBX-APIKEY", self.cfg.api_key.clone()).send().await?;
+
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!("Invaild response received while placing order on Binance: {:?}", 
+                response.text().await?));
+        }
+
+        let res = response.json::<serde_json::Value>().await?;
+        let res_ = res.to_string();
+        Ok(res_)
+
+    }
+
+    async fn cancel_order(&self, req: &OrderReq) -> Result<String, anyhow::Error> {
+        let url = "https://api.binance.com/api/v3/order";
         let now = Utc::now().timestamp_millis().to_string();
-        let sign = signature(self.cfg.secret_key.as_bytes(),
-            &format!("{}{}{}{}", now, "POST", "/ws-api/v3", body_str));
-        let response = self.http.post(url)
-            .header(CONTENT_TYPE, "/application/json")
-            .header("BNB-API-KEY", &self.cfg.api_key)
-            .header("BNB-API-SIGN", sign)
-            .header("BNB-API-TIMESTAMP", now)
-            .header("BNB-SECRET-KEY", &self.cfg.secret_key)
-            //.header("KC-API-PASSPHRASE", &self.cfg.passphrase)
-            .header("BNB-API-VERSION", "2")
-            .body(body_str)
+        let query_string = format!("symbol={}&origClientOrderId={}&timestamp={}",
+            req.symbol, req.id, now);
+        let sign = signature(self.cfg.secret_key.as_bytes(), &query_string).await;
+        
+        let response = self.http.delete(format!("{}?{}&signature={}", url, query_string, sign))
+            .header("X-MBX-APIKEY", &self.cfg.api_key)
             .send()
             .await?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!(format!(
-                "Invalid response received upon placing order on Binance: {}",
+            return Err(anyhow::anyhow!(format!("Invalid response received while canceling the order on Binance: {}", 
                 response.text().await?)));
-        }
+       }
 
         let val = response.json::<serde_json::Value>().await?;
         let res = val.to_string();
         Ok(res)
-    }
-
-    async fn cancel_order(&self, id: &str) -> anyhow::Result<()> {
-        let url = "https://api.binance.com/api/v3/order";
-        let now = Utc::now().timestamp_millis().to_string();
-        let sign = signature(self.cfg.secret_key.as_bytes(),
-            &format!("{}{}{}{}", now, "DELETE", format!("/api/v3/order/id={}", id), ""));
-        
-        self.http.delete(url)
-            .header("BNB-API-KEY", &self.cfg.api_key)
-            .header("BNB-API-TIMESTAMP", now)
-            .header("BNB-API-SIGN", sign)
-            .header("BNB-SECRET-KEY", &self.cfg.secret_key)
-            //.header("KC-API-PASSPHRASE", &self.cfg.passphrase)
-            .header("BNB-API-VERSION", "2")
-            .send()
-            .await?;
-
-        Ok(())
     }
 }

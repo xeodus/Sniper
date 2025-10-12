@@ -21,10 +21,11 @@ uuid = { version = "1.8", features = ["v4"] }
 anyhow = "1.0"
 chrono = "0.4"
 dotenv = "0.15.0"
-tracing = "0.1.41"
-tracing-subscriber = "0.3.19"
 toml = "0.9.2"
 dialoguer = "0.11.0"
+rusqlite = "0.37.0"
+clap = {version = "4.5.48", features = ["derive"]}
+env_logger = "0.11.8"
 
 [dev-dependencies]
 tokio-test = "0.4"
