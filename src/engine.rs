@@ -1,10 +1,9 @@
 use std::sync::Arc;
 use anyhow::Result;
-use chrono::Utc;
 use rust_decimal::Decimal;
 use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
-use crate::{data::{Candles, OrderReq, OrderType, Position, PositionSide, Side, Signal, TradingBot},
+use crate::{data::{Candles, OrderReq, OrderType, Side, Signal, TradingBot},
     db::Database, position_manager::PositionManager, 
     rest_client::BinanceClient, signal::MarketSignal};
 
