@@ -1,90 +1,111 @@
+use std::sync::Arc;
+use rust_decimal::Decimal;
+use serde::Deserialize;
+use tokio::sync::{mpsc, RwLock};
+use crate::{db::Database, position_manager::PositionManager, 
+    rest_client::BinanceClient, signal::MarketSignal};
+
 #[derive(Debug, Clone)]
+pub enum PositionSide {
+    Long,
+    Short
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Side {
     Buy,
-    Sell
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum OrderStatus {
-    New,
-    Filled,
-    Rejected
+    Sell,
+    Hold
 }
 
 #[derive(Debug, Clone)]
-pub enum Exchange {
-    Binance,
-    KuCoin
+pub enum OrderType {
+    Market,
+    Limit
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)] 
 pub enum Trend {
     UpTrend,
     DownTrend,
-    SideChop
+    Sideways
+}
+
+#[derive(Debug, Clone)]
+pub struct Position {
+    pub id: String,
+    pub symbol: String,
+    pub position_side: PositionSide,
+    pub entry_price: Decimal,
+    pub size: Decimal,
+    pub stop_loss: Decimal,
+    pub take_profit: Decimal,
+    pub opened_at: i64
+}
+
+#[derive(Debug)]
+pub struct Candles {
+    pub open: Decimal,
+    pub high: Decimal,
+    pub low: Decimal,
+    pub close: Decimal,
+    pub volume: Decimal,
+    pub timestamp: i64
 }
 
 #[derive(Debug, Clone)]
 pub struct OrderReq {
     pub id: String,
     pub symbol: String,
-    pub exchange: Exchange,
-    pub price: f64,
-    pub size: f64,
-    pub type_: String,
     pub side: Side,
-    pub timestamp: i64
+    pub order_type: OrderType,
+    pub price: Decimal,
+    pub size: Decimal,
+    pub sl: Option<Decimal>,
+    pub tp: Option<Decimal>,
+    pub manual: bool
 }
 
 #[derive(Debug, Clone)]
-pub struct Candles {
-    pub open: f64,
-    pub high: f64,
-    pub low: f64,
-    pub close: f64,
-    pub volume: f64,
-    pub timestamp: i64
-}
-
-#[derive(Debug, Clone)]
-pub struct GridOrder {
-    pub client_oid: String,
+pub struct Signal {
+    pub timestamp: i64,
     pub symbol: String,
-    pub level: f64,
-    pub size: f64,
-    pub active: bool,
-    pub side: Side,
-    pub status: OrderStatus
-}
-
-#[derive(Debug)]
-pub struct GridStrategy {
-    pub grid_levels: Vec<f64>,
-    pub active_orders: Vec<GridOrder>,
-    pub center_price: f64,
-    pub grid_spacing: f64,
-    pub max_levels: usize
-}
-
-pub struct TechnicalIndicators;
-
-#[derive(Debug)]
-pub struct TrendDetector {
-    pub alpha_slow: f64,
-    pub alpha_fast: f64,
-    pub alpha_atr: f64,
-    pub ema_slow: f64,
-    pub ema_fast: f64,
-    pub atr: f64,
-    pub prev_closed: f64,
-    pub initialized: bool,
-    pub k_atr: f64
-}
-
-#[derive(Debug, Clone)]
-pub struct BotState {
+    pub action: Side,
     pub trend: Trend,
-    pub open_orders: Vec<GridOrder>,
-    pub pnl: f64
+    pub price: Decimal,
+    pub confidence: f64
 }
 
+pub struct TradingBot {
+    pub analyzer: Arc<RwLock<MarketSignal>>,
+    pub position_manager: Arc<PositionManager>,
+    pub binance_client: Arc<BinanceClient>,
+    pub signal_tx: mpsc::Sender<Signal>,
+    pub order_tx: mpsc::Sender<OrderReq>,
+    pub account_balace: Arc<RwLock<Decimal>>,
+    pub db: Arc<Database>
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BinanceKline {
+    #[serde(rename="t")]
+    pub open_time: i64,
+    #[serde(rename="o")]
+    pub open: String,
+    #[serde(rename="h")]
+    pub high: String,
+    #[serde(rename="l")]
+    pub low: String,
+    #[serde(rename="c")]
+    pub close: String,
+    #[serde(rename="v")]
+    pub volume: String
+}
+
+/*#[derive(Debug, Clone, Deserialize)]
+pub struct BinanceKlineEvent {
+    #[serde(rename="e")]
+    pub event_type: String,
+    #[serde(rename="k")]
+    pub kline: BinanceKline
+}*/

@@ -4,28 +4,24 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tokio = {version = "1.0", features = ["full"]}
-tokio-tungstenite = { version = "0.19", features = ["native-tls"] }
-tokio-stream = {version = "0.1", features = ["sync"]}
-reqwest = {version = "0.12", features = ["json"]}
-serde = {version = "1.0", features = ["derive"]}
+ethers = "2.0"
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-futures-util = "0.3"
-sha2 = "0.10"
-hmac = "0.12"
-hex = "0.4"
-log = "0.4.21"
-base64 = "0.21"
-async-trait = "0.1"
-uuid = { version = "1.8", features = ["v4"] }
+tokio-tungstenite = "0.20"
+ta = "0.5"
 anyhow = "1.0"
+rust_decimal = "1.33"
+url = "2.4"
+futures-util = "0.3"
+sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "postgres", "chrono", "rust_decimal"] }
 chrono = "0.4"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+reqwest = { version = "0.12.23", features = ["json"] }
 dotenv = "0.15.0"
-toml = "0.9.2"
-dialoguer = "0.11.0"
-rusqlite = "0.37.0"
-clap = {version = "4.5.48", features = ["derive"]}
-env_logger = "0.11.8"
+hmac = "0.12.1"
+sha2 = "0.10.9"
+uuid = { version = "1.18.1", features = ["v4"] }
 
 [dev-dependencies]
 tokio-test = "0.4"

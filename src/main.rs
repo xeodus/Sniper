@@ -1,86 +1,140 @@
-use clap::{arg, Parser};
-use dotenv::dotenv;
+use std::env;
+use std::sync::Arc;
+use futures_util::{pin_mut, StreamExt};
+use rust_decimal::Decimal;
+use tokio::{sync::mpsc, time::{interval, sleep, Duration}};
+use tracing::{info, warn};
 use anyhow::Result;
+use uuid::Uuid;
+use crate::{data::{OrderReq, OrderType, Side, Signal, TradingBot}, 
+    db::Database, rest_client::BinanceClient, websocket::WebSocketClient};
 
-use crate::{
-    config::AppConfig, data::{Exchange, Trend}, trading_engine::TradingEngine
-};
-
+mod db;
+mod signal;
 mod data;
-mod exchange;
-mod store;
-mod indicator;
-mod strategy;
+mod sign;
+mod engine;
+mod rest_client;
+mod position_manager;
 mod websocket;
-mod config;
-mod trading_engine;
-
-#[derive(Debug, Parser)]
-struct Args {
-    #[arg(long, default_value="ETH-USDT")]
-    symbol: String,
-    #[arg(long, default_value="1m")]
-    timeframe: String,
-    #[arg(long, default_value="orders.db")]
-    db: String,
-    #[arg(long, default_value="binance")]
-    exchange: String,
-    #[arg(long, default_value="0.001")]
-    quantity: f64,
-    #[arg(long, default_value="sidechop")]
-    trend: String,
-    #[arg(long, default_value="0.01")]
-    grid_spacing: f64,
-    #[arg(long, default_value="10")]
-    grid_levels: usize,
-}
-
+mod notification;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logging
-    env_logger::init();
+    tracing_subscriber::fmt().init();
+    info!("Starting the bot..");
+
+    let database_url = env::var("DATABASE_URL").expect("Database url not set..");
+    let db = Arc::new(Database::new(&database_url).await?);
+    db.init_schema().await?;
+
+    let api_key = env::var("API_KEY").expect("API key not found..");
+    let secret_key = env::var("SECRET_KEY").expect("secret key not found..");
+    let binance_client = Arc::new(BinanceClient::new(api_key, secret_key, true));
+    let (signal_tx, mut signal_rx) = mpsc::channel::<Signal>(100);
+    let (order_tx, mut order_rx) = mpsc::channel::<OrderReq>(100);
     
-    // Load environment variables
-    dotenv().ok();
-    
-    let args = Args::parse();
-    log::info!("Starting grid bot for {} @ {} on {}", args.symbol, args.timeframe, args.exchange);
+    let bot = Arc::new(
+        TradingBot::new(signal_tx, order_tx, Decimal::new(1000, 0), 
+        binance_client.clone(), db.clone())?);
+        
+    bot.initializer().await?;
 
-    // Load configuration
-    let mut config = AppConfig::from_file(&args.db)
-        .map_err(|e| anyhow::anyhow!("Failed to load configuration: {}", e))?;
+    tokio::spawn(async move {
+        while let Some(signal) = signal_rx.recv().await {
+            info!("Signal: {:?} {} | Confidence {:.2}", signal.action, signal.symbol, signal.confidence * 100.0);
+        }
+    });
 
+    let bot_clone = bot.clone();
 
-    // Override config with command line arguments
-    config.trading.symbol = args.symbol.clone();
-    config.trading.timeframe = args.timeframe.clone();
-    config.trading.quantity = args.quantity;
-    config.trading.grid_spacing = args.grid_spacing;
-    config.trading.grid_levels = args.grid_levels;
-    config.database.path = args.db.clone();
+    tokio::spawn(async move {
+        while let Some(order) = order_rx.recv().await {
+            info!("Executed order: {:?}", order);
+            if let Err(e) = bot_clone.execute_order(order).await {
+                tracing::error!("Failed to execute order: {}", e);
+            }
+        }
+    });
 
-    // Determine exchange type
-    let exchange_type = match args.exchange.to_lowercase().as_str() {
-        "binance" => Exchange::Binance,
-        "kucoin" => Exchange::KuCoin,
-        _ => return Err(anyhow::anyhow!("Unsupported exchange: {}", args.exchange)),
-    };
+    let symbol = "ETH/USDT";
+    info!("Connecting to the market for symbol: {}", symbol);
+    let bot_clone = bot.clone();
 
-    let trend = match args.trend.to_lowercase().as_str() {
-        "sidechop" => Trend::SideChop,
-        "uptrend" => Trend::UpTrend,
-        "downtrend" => Trend::DownTrend,
-        &_ => return Err(anyhow::anyhow!("Invaild trend received: {}", args.trend))
-    };
+    tokio::spawn(async move {
+        let ws = WebSocketClient::new(symbol, "1m");
+        let stream = match ws.connect().await {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!("Connection failed: {}", e);
+                return;
+            }
+        };
 
-    // Create and start trading engine
-    let engine = TradingEngine::new(config, exchange_type, trend).await
-        .map_err(|e| anyhow::anyhow!("Failed to create trading engine: {}", e))?;
+        pin_mut!(stream); 
 
-    // Start the trading engine
-    engine.start().await
-        .map_err(|e| anyhow::anyhow!("Trading engine failed: {}", e))?;
+        while let Some(candle_result) = stream.next().await {
+            match candle_result {
+                Ok(candle) => {
+                    info!("{} | open: {}, high: {}, low: {}, close: {}, volume: {}",
+                        symbol, candle.open, candle.high, candle.low, candle.close, candle.volume);
+
+                    if let Err(e) = bot_clone.process_candle(candle, symbol).await {
+                        tracing::error!("Failed to process candle data: {}", e);
+                        return;
+                    }
+                },
+                Err(e) => {
+                    tracing::error!("WebSocket connection failed: {}", e);
+                    return;
+                }
+            }
+        }
+
+        warn!("WebSocket stream ended, reconnecting...");
+    });
+
+    let bot_clone = bot.clone();
+
+    tokio::spawn(async move {
+        let manual_order = OrderReq {
+            symbol: "ETH/USDT".to_string(),
+            id: Uuid::new_v4().to_string(),
+            side: Side::Buy,
+            order_type: OrderType::Limit,
+            size: Decimal::new(1, 0),
+            price: Decimal::new(1000, 0),
+            sl: Some(Decimal::new(2900, 0)),
+            tp: Some(Decimal::new(3200, 0)),
+            manual: true
+        };
+
+        info!("Placing manual orders!");
+
+        if let Err(e) = bot_clone.place_manual_order(manual_order).await {
+            tracing::error!("Failed to place manual order: {}", e);
+            return;
+        }
+
+        sleep(Duration::from_secs(30)).await;
+    });
+
+    tokio::spawn(async move {
+        let mut interval = interval(Duration::from_secs(60));
+
+        loop {
+            interval.tick().await;
+
+            match binance_client.account_balance().await {
+                Ok(balance) => {
+                    info!("Account balance: {}", balance);
+                },
+                Err(e) => {
+                    tracing::error!("Failed to get account balance: {}", e);
+                }
+            }
+        }
+    });
 
     Ok(())
 }
