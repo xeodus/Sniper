@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use anyhow::Result;
-use rust_decimal::Decimal;
+use rust_decimal::{prelude::FromPrimitive, Decimal};
 use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 use crate::{data::{Candles, OrderReq, OrderType, Side, Signal, TradingBot},
@@ -54,8 +54,9 @@ impl TradingBot {
         let analyzer = self.analyzer.read().await;
         if let Some(signal) = analyzer.analyze(symbol.to_string()) {
             self.db.save_signal(signal.clone()).await?;
+            let decimal_value = Decimal::from_f64(0.7).unwrap();
 
-            if signal.confidence > 0.7 {
+            if signal.confidence > decimal_value {
                 self.order_tx.send(order).await?;
 
                 if signal.action == Side::Buy {
@@ -72,7 +73,8 @@ impl TradingBot {
         let stop_loss = signal.price * Decimal::new(98, 2);
         let take_profit = signal.price * Decimal::new(104, 2);
 
-        let position_size = self.position_manager.calculate_position_size(*account_balance, signal.price, stop_loss).await;
+        let position_size = self.position_manager
+            .calculate_position_size(*account_balance, signal.price, stop_loss).await;
 
         if position_size > Decimal::ZERO {
             let order = OrderReq {
@@ -99,27 +101,13 @@ impl TradingBot {
     }
 
     pub async fn execute_order(&self, order: OrderReq) -> Result<()> {
-        match order.order_type {
-            OrderType::Market => {
-                self.binance_client.place_market_order(&order).await?;
-
-                /*if order.side == Side::Buy {
-                    let position = Position {
-                        id: order.id.to_string(),
-                        symbol: order.symbol.clone(),
-                        position_side: PositionSide::Long,
-                        size: order.size,
-                        entry_price: Decimal::ZERO,
-                        stop_loss: order.sl.unwrap_or(Decimal::ZERO),
-                        take_profit: order.tp.unwrap_or(Decimal::ZERO),
-                        opened_at: Utc::now().timestamp_millis()
-                    };
-                    self.position_manager.open_positions(position, order.manual).await?;
-                }*/
-            },
-            OrderType::Limit => {
-                self.binance_client.place_limit_order(&order).await?;
-            }
+        if matches!(order.order_type, OrderType::Limit) {
+            self.binance_client.place_limit_order(&order).await?;
+            println!("Placed limit order for: {}", order.id);
+        }
+        else if matches!(order.order_type, OrderType::Market) {
+            self.binance_client.place_market_order(&order).await?;
+            println!("Placed market order for: {}", order.id);
         }
 
         Ok(())

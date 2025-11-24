@@ -4,7 +4,7 @@ use reqwest::Client;
 use rust_decimal::Decimal;
 use serde_json::json;
 use tracing::info;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use crate::sign::signature;
 
 pub struct BinanceClient {
@@ -47,11 +47,7 @@ impl BinanceClient {
                 Side::Buy => "Buy".to_string(),
                 Side::Sell => "Sell".to_string(),
                 Side::Hold => "Hold".to_string()
-            },
-            /*"type": match req.order_type {
-                OrderType::Market => "Market".to_string(),
-                OrderType::Limit { price: _ } => "Limit".to_string()
-            },*/
+            }, 
             "timeInForce": "GTC",
             "size": req.size.to_string(),
             "price": req.price.to_string(), 
@@ -66,7 +62,7 @@ impl BinanceClient {
             .header("X-MBX-APIKEY", self.api_key.clone()).send().await?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Invalid response received while placing the order on Binance: {:?}", response.text().await));
+            return Err(anyhow!("Invalid response received while placing the order on Binance: {:?}", response.text().await));
         }
 
         let res = response.json::<serde_json::Value>().await?;
@@ -82,11 +78,7 @@ impl BinanceClient {
                 Side::Buy => "Buy".to_string(),
                 Side::Sell => "Sell".to_string(),
                 Side::Hold => "Hold".to_string()
-            },
-            /*"type": match req.order_type {
-                OrderType::Market => "Market".to_string(),
-                OrderType::Limit { price: _ } => "Limit".to_string()
-            },*/
+            }, 
             "timeInForce": "GTC",
             "size": req.size.to_string(),
             "price": req.price.to_string(),
@@ -101,7 +93,7 @@ impl BinanceClient {
             .header("X-MBX-APIKEY", self.api_key.clone()).send().await?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Invalid response received while placing the limit order on Binance: {:?}", response.text().await));
+            return Err(anyhow!("Invalid response received while placing the limit order on Binance: {:?}", response.text().await));
         }
 
         let res = response.json::<serde_json::Value>().await?;
@@ -117,7 +109,7 @@ impl BinanceClient {
         let response = self.client.delete(format!("{}?{}&signature={}", url, query_string, sign)).send().await?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Invalid response received while cancelling the orders at Binance: {:?}", response.text().await));
+            return Err(anyhow!("Invalid response received while cancelling the orders at Binance: {:?}", response.text().await));
         }
 
         let res = response.json::<serde_json::Value>().await?;

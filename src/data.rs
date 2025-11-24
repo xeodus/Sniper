@@ -31,6 +31,7 @@ pub enum Trend {
     Sideways
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct Position {
     pub id: String,
@@ -40,7 +41,10 @@ pub struct Position {
     pub size: Decimal,
     pub stop_loss: Decimal,
     pub take_profit: Decimal,
-    pub opened_at: i64
+    pub opened_at: i64,
+    pub closed_at: i64,
+    pub exit_price: Decimal,
+    pub pnl: Decimal
 }
 
 #[derive(Debug)]
@@ -53,6 +57,7 @@ pub struct Candles {
     pub timestamp: i64
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct OrderReq {
     pub id: String,
@@ -68,14 +73,16 @@ pub struct OrderReq {
 
 #[derive(Debug, Clone)]
 pub struct Signal {
+    pub id: String,
     pub timestamp: i64,
     pub symbol: String,
     pub action: Side,
-    pub trend: Trend,
     pub price: Decimal,
-    pub confidence: f64
+    pub trend: Trend,
+    pub confidence: Decimal 
 }
 
+#[allow(dead_code)]
 pub struct TradingBot {
     pub analyzer: Arc<RwLock<MarketSignal>>,
     pub position_manager: Arc<PositionManager>,

@@ -1,5 +1,6 @@
 use crate::data::{Candles, Side, Signal, Trend};
 use rust_decimal::prelude::*;
+use uuid::Uuid;
 
 pub struct MarketSignal {
     pub candles: Vec<Candles>,
@@ -154,14 +155,16 @@ impl MarketSignal {
         let (macd, signal) = self.calculate_macd();
         let action = self.determine_action(rsi, macd, signal, &trend);
         let latest_candle = self.candles.last()?;
+        let confidence = Decimal::from_f64(self.calculate_confidence(rsi, macd, &trend)).unwrap();
 
         return Some(Signal {
+            id: Uuid::new_v4().to_string(),
             timestamp: latest_candle.timestamp,
             symbol,
             action,
             trend: trend.clone(),
             price: latest_candle.close,
-            confidence: self.calculate_confidence(rsi, macd, &trend)
+            confidence
         });
     }
 }

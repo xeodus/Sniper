@@ -1,7 +1,8 @@
 use std::env;
 use std::sync::Arc;
+use dotenv::dotenv;
 use futures_util::{pin_mut, StreamExt};
-use rust_decimal::Decimal;
+use rust_decimal::{prelude::FromPrimitive, Decimal};
 use tokio::{sync::mpsc, time::{interval, sleep, Duration}};
 use tracing::{info, warn};
 use anyhow::Result;
@@ -15,18 +16,18 @@ mod data;
 mod sign;
 mod engine;
 mod rest_client;
-mod position_manager;
 mod websocket;
+mod position_manager;
 mod notification;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt().init();
     info!("Starting the bot..");
-
+   
+    dotenv().ok();
     let database_url = env::var("DATABASE_URL").expect("Database url not set..");
     let db = Arc::new(Database::new(&database_url).await?);
-    db.init_schema().await?;
 
     let api_key = env::var("API_KEY").expect("API key not found..");
     let secret_key = env::var("SECRET_KEY").expect("secret key not found..");
@@ -41,8 +42,9 @@ async fn main() -> Result<()> {
     bot.initializer().await?;
 
     tokio::spawn(async move {
+        let decimal = Decimal::from_f64(100.0).unwrap();
         while let Some(signal) = signal_rx.recv().await {
-            info!("Signal: {:?} {} | Confidence {:.2}", signal.action, signal.symbol, signal.confidence * 100.0);
+            info!("Signal: {:?} {} | Confidence {:.2}", signal.action, signal.symbol, signal.confidence * decimal);
         }
     });
 
@@ -66,7 +68,7 @@ async fn main() -> Result<()> {
         let stream = match ws.connect().await {
             Ok(s) => s,
             Err(e) => {
-                tracing::error!("Connection failed: {}", e);
+                tracing::error!("WebSocket connection failed: {}", e);
                 return;
             }
         };
@@ -97,6 +99,8 @@ async fn main() -> Result<()> {
     let bot_clone = bot.clone();
 
     tokio::spawn(async move {
+        sleep(Duration::from_secs(30)).await;
+
         let manual_order = OrderReq {
             symbol: "ETH/USDT".to_string(),
             id: Uuid::new_v4().to_string(),
@@ -111,15 +115,11 @@ async fn main() -> Result<()> {
 
         info!("Placing manual orders!");
 
-        if let Err(e) = bot_clone.place_manual_order(manual_order).await {
+        if let Err(e) = bot_clone.place_manual_order(manual_order.clone()).await {
             tracing::error!("Failed to place manual order: {}", e);
-            return;
+            return binance_client.cancel_orders(&manual_order).await;
         }
 
-        sleep(Duration::from_secs(30)).await;
-    });
-
-    tokio::spawn(async move {
         let mut interval = interval(Duration::from_secs(60));
 
         loop {
@@ -134,7 +134,7 @@ async fn main() -> Result<()> {
                 }
             }
         }
-    });
+    }); 
 
     Ok(())
 }

@@ -12,7 +12,9 @@ pub struct WebSocketClient {
 impl WebSocketClient {
     pub fn new(symbol: &str, interval: &str) -> Self {
         let symbol_lower = symbol.to_lowercase().replace("/", "");
-        let url = format!("wss://stream.binance.com:9443/ws/{}@kline_{}", symbol_lower, interval);
+        let url = format!("wss://stream.binance.com:9443/ws/{}@kline_{}", symbol_lower, interval.to_lowercase());
+
+        info!("ws url: {}", url);
 
         Self { url }
     }
