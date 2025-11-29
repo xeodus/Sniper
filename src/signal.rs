@@ -6,16 +6,16 @@ pub struct MarketSignal {
     pub candles: Vec<Candles>,
     pub rsi: usize,
     pub ema_slow: usize,
-    pub ema_fast: usize 
+    pub ema_fast: usize,
 }
 
 impl MarketSignal {
     pub fn new() -> Self {
         Self {
-            candles: Vec::new(), 
+            candles: Vec::new(),
             rsi: 14,
             ema_slow: 26,
-            ema_fast: 12
+            ema_fast: 12,
         }
     }
 
@@ -36,14 +36,13 @@ impl MarketSignal {
         let mut losses = 0.0;
 
         for i in (self.candles.len() - self.rsi)..self.candles.len() {
-            let change = (self.candles[i].close - self.candles[i-1].close)
+            let change = (self.candles[i].close - self.candles[i - 1].close)
                 .to_f64()
                 .unwrap();
 
             if change > 0.0 {
                 gains += change;
-            }
-            else {
+            } else {
                 losses += change.abs();
             }
         }
@@ -84,9 +83,15 @@ impl MarketSignal {
 
     pub fn calculate_confidence(&self, rsi: f64, macd: f64, trend: &Trend) -> f64 {
         let mut confidence = 0.5;
-        if rsi < 30.0 || rsi > 70.0 { confidence += 0.2; }
-        if macd.abs() > 0.01 { confidence += 0.15; }
-        if *trend != Trend::Sideways { confidence += 0.15; }
+        if rsi < 30.0 || rsi > 70.0 {
+            confidence += 0.2;
+        }
+        if macd.abs() > 0.01 {
+            confidence += 0.15;
+        }
+        if *trend != Trend::Sideways {
+            confidence += 0.15;
+        }
         confidence
     }
 
@@ -101,11 +106,9 @@ impl MarketSignal {
 
         if recent_close > ema_20 && ema_20 > ema_50 {
             Trend::UpTrend
-        }
-        else if recent_close < ema_20 && ema_20 < ema_50 {
+        } else if recent_close < ema_20 && ema_20 < ema_50 {
             Trend::DownTrend
-        }
-        else {
+        } else {
             Trend::Sideways
         }
     }
@@ -115,35 +118,30 @@ impl MarketSignal {
             Trend::UpTrend => {
                 if rsi < 30.0 && macd > signal_line {
                     Side::Buy
-                }
-                else if rsi > 70.0 {
+                } else if rsi > 70.0 {
                     Side::Sell
-                }
-                else {
+                } else {
                     Side::Hold
                 }
-            },
+            }
             Trend::DownTrend => {
                 if rsi > 70.0 && macd < signal_line {
                     Side::Sell
-                }
-                else {
+                } else {
                     Side::Hold
                 }
-            },
+            }
             Trend::Sideways => {
                 if rsi < 30.0 {
                     Side::Buy
-                }
-                else if rsi > 70.0 {
+                } else if rsi > 70.0 {
                     Side::Sell
-                }
-                else {
+                } else {
                     Side::Hold
                 }
             }
         }
-    } 
+    }
 
     pub fn analyze(&self, symbol: String) -> Option<Signal> {
         if self.candles.len() < 50 {
@@ -164,7 +162,7 @@ impl MarketSignal {
             action,
             trend: trend.clone(),
             price: latest_candle.close,
-            confidence
+            confidence,
         });
     }
 }

@@ -1,34 +1,36 @@
-use std::sync::Arc;
+use crate::{
+    db::Database, position_manager::PositionManager, rest_client::BinanceClient,
+    signal::MarketSignal,
+};
 use rust_decimal::Decimal;
 use serde::Deserialize;
+use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
-use crate::{db::Database, position_manager::PositionManager, 
-    rest_client::BinanceClient, signal::MarketSignal};
 
 #[derive(Debug, Clone, Copy)]
 pub enum PositionSide {
     Long,
-    Short
+    Short,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Side {
     Buy,
     Sell,
-    Hold
+    Hold,
 }
 
 #[derive(Debug, Clone)]
 pub enum OrderType {
     Market,
-    Limit
+    Limit,
 }
 
-#[derive(Debug, Clone, PartialEq)] 
+#[derive(Debug, Clone, PartialEq)]
 pub enum Trend {
     UpTrend,
     DownTrend,
-    Sideways
+    Sideways,
 }
 
 #[allow(dead_code)]
@@ -41,7 +43,7 @@ pub struct Position {
     pub size: Decimal,
     pub stop_loss: Decimal,
     pub take_profit: Decimal,
-    pub opened_at: i64
+    pub opened_at: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -51,7 +53,7 @@ pub struct Candles {
     pub low: Decimal,
     pub close: Decimal,
     pub volume: Decimal,
-    pub timestamp: i64
+    pub timestamp: i64,
 }
 
 #[allow(dead_code)]
@@ -65,7 +67,7 @@ pub struct OrderReq {
     pub size: Decimal,
     pub sl: Option<Decimal>,
     pub tp: Option<Decimal>,
-    pub manual: bool
+    pub manual: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -76,7 +78,7 @@ pub struct Signal {
     pub action: Side,
     pub price: Decimal,
     pub trend: Trend,
-    pub confidence: Decimal 
+    pub confidence: Decimal,
 }
 
 #[allow(dead_code)]
@@ -88,34 +90,34 @@ pub struct TradingBot {
     pub signal_tx: mpsc::Sender<Signal>,
     pub order_tx: mpsc::Sender<OrderReq>,
     pub account_balace: Arc<RwLock<Decimal>>,
-    pub db: Arc<Database>
+    pub db: Arc<Database>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct BinanceKline {
-    #[serde(rename="t")]
+    #[serde(rename = "t")]
     pub open_time: i64,
-    #[serde(rename="o")]
+    #[serde(rename = "o")]
     pub open: String,
-    #[serde(rename="h")]
+    #[serde(rename = "h")]
     pub high: String,
-    #[serde(rename="l")]
+    #[serde(rename = "l")]
     pub low: String,
-    #[serde(rename="c")]
+    #[serde(rename = "c")]
     pub close: String,
-    #[serde(rename="v")]
-    pub volume: String
+    #[serde(rename = "v")]
+    pub volume: String,
 }
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct BinanceKlineEvent {
-    #[serde(rename="e")]
+    #[serde(rename = "e")]
     pub event_type: String,
-    #[serde(rename="E")]
+    #[serde(rename = "E")]
     pub event_time: i64,
-    #[serde(rename="s")]
+    #[serde(rename = "s")]
     pub symbol: String,
-    #[serde(rename="k")]
-    pub kline: BinanceKline
+    #[serde(rename = "k")]
+    pub kline: BinanceKline,
 }

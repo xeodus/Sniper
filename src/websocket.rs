@@ -1,19 +1,23 @@
-use std::str::FromStr;
+use crate::data::{BinanceKlineEvent, Candles};
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use rust_decimal::Decimal;
-use tracing::{info, warn};
-use crate::data::{BinanceKlineEvent, Candles};
+use std::str::FromStr;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tracing::{info, warn};
 
 pub struct WebSocketClient {
-    pub url: String
+    pub url: String,
 }
 
 impl WebSocketClient {
     pub fn new(symbol: &str, interval: &str) -> Self {
         let symbol_lower = symbol.to_lowercase().replace("/", "");
-        let url = format!("wss://stream.binance.com:9443/ws/{}@kline_{}", symbol_lower, interval.to_lowercase());
+        let url = format!(
+            "wss://stream.binance.com:9443/ws/{}@kline_{}",
+            symbol_lower,
+            interval.to_lowercase()
+        );
 
         info!("ws url: {}", url);
 
@@ -21,10 +25,14 @@ impl WebSocketClient {
     }
 
     pub async fn connect(&self) -> Result<impl StreamExt<Item = Result<Candles, anyhow::Error>>> {
-        let (ws_srteam, response) = connect_async(&self.url).await
+        let (ws_srteam, response) = connect_async(&self.url)
+            .await
             .context("WebSocket connection failed")?;
 
-        info!("Connected to Binance WebSocket. HTTP status: {}", response.status());
+        info!(
+            "Connected to Binance WebSocket. HTTP status: {}",
+            response.status()
+        );
 
         let (_, read) = ws_srteam.split();
         let stream = read.filter_map(|msg| async move {
@@ -45,32 +53,28 @@ impl WebSocketClient {
                         Decimal::from_str(&k.high),
                         Decimal::from_str(&k.low),
                         Decimal::from_str(&k.close),
-                        Decimal::from_str(&k.volume)
-                    )
-                    {
+                        Decimal::from_str(&k.volume),
+                    ) {
                         Some(Ok(Candles {
                             timestamp: k.open_time / 1000,
                             open,
                             high,
                             low,
                             close,
-                            volume
+                            volume,
                         }))
-                    }
-                    else {
+                    } else {
                         warn!("Failed to parse OHLCV decimals from kline: {:?}", k);
                         return None;
                     }
-                },
+                }
                 Ok(Message::Ping(_) | Message::Pong(_)) => None,
                 Ok(Message::Close(frame)) => {
                     info!("WebSocket closed by peer: {:?}", frame);
                     None
-                },
-                Err(e) => {
-                    Some(Err(anyhow::anyhow!("Failed to connect WebSocket: {}", e)))
-                },
-                _ => None
+                }
+                Err(e) => Some(Err(anyhow::anyhow!("Failed to connect WebSocket: {}", e))),
+                _ => None,
             }
         });
 

@@ -1,12 +1,12 @@
+use crate::data::{Candles, Position, PositionSide, Signal};
 use anyhow::Context;
+use anyhow::Result;
 use chrono::{DateTime, TimeZone, Utc};
 use rust_decimal::Decimal;
 use sqlx::PgPool;
-use anyhow::Result;
-use crate::data::{Candles, Position, PositionSide, Signal};
 
 pub struct Database {
-    pub pool: PgPool
+    pub pool: PgPool,
 }
 
 impl Database {
@@ -20,7 +20,7 @@ impl Database {
         sqlx::migrate!("./migrations").run(&pool).await?;
 
         Ok(Self { pool })
-    } 
+    }
 
     pub async fn save_order(&self, position: &Position, manual: bool) -> Result<()> {
         let opened = position.opened_at;
@@ -32,9 +32,16 @@ impl Database {
             stop_loss, take_profit, opened_at, status, manual)
             VAlUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)               
             "#,
-            position.id, position.symbol, format!("{:?}", position.position_side), position.entry_price,
-            position.size, position.stop_loss, position.take_profit, opened_at,
-            "open", manual
+            position.id,
+            position.symbol,
+            format!("{:?}", position.position_side),
+            position.entry_price,
+            position.size,
+            position.stop_loss,
+            position.take_profit,
+            opened_at,
+            "open",
+            manual
         )
         .execute(&self.pool)
         .await?;
@@ -42,7 +49,12 @@ impl Database {
         Ok(())
     }
 
-    pub async fn close_order(&self, trade_id: &str, exit_price: Decimal, pnl: Decimal) -> Result<()> {
+    pub async fn close_order(
+        &self,
+        trade_id: &str,
+        exit_price: Decimal,
+        pnl: Decimal,
+    ) -> Result<()> {
         let now = Utc::now();
         sqlx::query!(
             r#"
@@ -50,8 +62,11 @@ impl Database {
             SET closed_at = $1, exit_price = $2, pnl = $3, status = 'closed'
             WHERE trade_id = $4
             "#,
-            now, exit_price, pnl, trade_id
-        ) 
+            now,
+            exit_price,
+            pnl,
+            trade_id
+        )
         .execute(&self.pool)
         .await?;
 
@@ -67,9 +82,14 @@ impl Database {
             INSERT INTO signals (id, timestamp, symbol, action, price, confidence, trend)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             "#,
-            signal.id, timestamp, signal.symbol, format!("{:?}", signal.action),
-            signal.price, signal.confidence, format!("{:?}", signal.trend) 
-        ) 
+            signal.id,
+            timestamp,
+            signal.symbol,
+            format!("{:?}", signal.action),
+            signal.price,
+            signal.confidence,
+            format!("{:?}", signal.trend)
+        )
         .execute(&self.pool)
         .await?;
 
@@ -77,30 +97,47 @@ impl Database {
     }
 
     pub async fn get_open_orders(&self) -> Result<Vec<Position>> {
-        let query = sqlx::query_as::<_, (String, String, String, Decimal, 
-            Decimal, Decimal, Decimal, DateTime<Utc>)>
-        (
+        let query = sqlx::query_as::<
+            _,
+            (
+                String,
+                String,
+                String,
+                Decimal,
+                Decimal,
+                Decimal,
+                Decimal,
+                DateTime<Utc>,
+            ),
+        >(
             r#"
             SELECT trade_id, symbol, side, entry_price, quantity, 
             stop_loss, take_profit, opened_at
             FROM trades 
             WHERE status = 'open'
-            "#
+            "#,
         )
         .fetch_all(&self.pool)
         .await
         .unwrap();
 
-        let position = query.into_iter().map(|row| Position {
-            id: row.0,
-            symbol: row.1,
-            position_side: if row.2 == "Long" { PositionSide::Long } else { PositionSide::Short },
-            entry_price: row.3,
-            size: row.4,
-            stop_loss: row.5,
-            take_profit: row.6,
-            opened_at: row.7.timestamp()
-        }).collect();
+        let position = query
+            .into_iter()
+            .map(|row| Position {
+                id: row.0,
+                symbol: row.1,
+                position_side: if row.2 == "Long" {
+                    PositionSide::Long
+                } else {
+                    PositionSide::Short
+                },
+                entry_price: row.3,
+                size: row.4,
+                stop_loss: row.5,
+                take_profit: row.6,
+                opened_at: row.7.timestamp(),
+            })
+            .collect();
 
         Ok(position)
     }
@@ -110,19 +147,22 @@ impl Database {
             r#"
             SELECT timestamp, open, high, low, close, volume
             FROM candles
-            "#
+            "#,
         )
         .fetch_all(&self.pool)
         .await?;
 
-        let candle = query.into_iter().map(|row| Candles {
-            timestamp: row.0,
-            open: row.1,
-            high: row.2,
-            low: row.3,
-            close: row.4,
-            volume: row.5 
-        }).collect();
+        let candle = query
+            .into_iter()
+            .map(|row| Candles {
+                timestamp: row.0,
+                open: row.1,
+                high: row.2,
+                low: row.3,
+                close: row.4,
+                volume: row.5,
+            })
+            .collect();
 
         Ok(candle)
     }

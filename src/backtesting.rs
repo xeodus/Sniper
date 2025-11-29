@@ -1,10 +1,16 @@
-use rust_decimal::{Decimal, prelude::{FromPrimitive, ToPrimitive}};
-use crate::{data::{Candles, Position, PositionSide, Side}, signal::MarketSignal};
+use crate::{
+    data::{Candles, Position, PositionSide, Side},
+    signal::MarketSignal,
+};
+use rust_decimal::{
+    prelude::{FromPrimitive, ToPrimitive},
+    Decimal,
+};
 
 pub struct BackTesting {
     pub analyzer: MarketSignal,
     pub init_amount: Decimal,
-    pub positions: Vec<Position>
+    pub positions: Vec<Position>,
 }
 
 pub struct BacktestResult {
@@ -15,7 +21,7 @@ pub struct BacktestResult {
     pub winning_trades: u32,
     pub losing_trades: u32,
     pub win_rate: f64,
-    pub return_pct: f64
+    pub return_pct: f64,
 }
 
 impl BackTesting {
@@ -23,7 +29,7 @@ impl BackTesting {
         Self {
             analyzer: MarketSignal::new(),
             init_amount,
-            positions: Vec::new()
+            positions: Vec::new(),
         }
     }
 
@@ -50,8 +56,7 @@ impl BackTesting {
                     }
 
                     closed_positions.push(i);
-                }
-                else if candle.high >= position.take_profit {
+                } else if candle.high >= position.take_profit {
                     let pnl = (position.take_profit - position.entry_price) * position.size;
                     total_pnl += pnl;
                     balance += position.take_profit * position.size;
@@ -77,11 +82,11 @@ impl BackTesting {
                     let take_profit = signal.price * Decimal::new(104, 2);
                     let risk_amount = balance * Decimal::new(2, 2);
                     let risk_per_unit = signal.price - stop_loss;
-                    
+
                     if risk_per_unit > Decimal::ZERO {
                         let quantity = risk_amount / risk_per_unit;
                         let cost = signal.price * quantity;
-                        
+
                         if cost <= balance {
                             balance -= cost;
                             self.positions.push(Position {
@@ -92,7 +97,7 @@ impl BackTesting {
                                 size: quantity,
                                 stop_loss,
                                 take_profit,
-                                opened_at: candle.timestamp
+                                opened_at: candle.timestamp,
                             });
                         }
                     }
@@ -106,7 +111,9 @@ impl BackTesting {
             0.0
         };
 
-        let return_pct = ((balance - self.init_amount) / self.init_amount * Decimal::new(100, 0)).to_f64().unwrap_or(0.0);
+        let return_pct = ((balance - self.init_amount) / self.init_amount * Decimal::new(100, 0))
+            .to_f64()
+            .unwrap_or(0.0);
 
         BacktestResult {
             init_balance: self.init_amount,
@@ -116,7 +123,7 @@ impl BackTesting {
             winning_trades,
             losing_trades: total_trades - winning_trades,
             win_rate,
-            return_pct
+            return_pct,
         }
     }
 }
