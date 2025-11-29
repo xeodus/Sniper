@@ -49,12 +49,7 @@ impl Database {
         Ok(())
     }
 
-    pub async fn close_order(
-        &self,
-        trade_id: &str,
-        exit_price: Decimal,
-        pnl: Decimal,
-    ) -> Result<()> {
+    pub async fn close_order(&self, trade_id: &str, exit_price: Decimal, pnl: Decimal) -> Result<()> {
         let now = Utc::now();
         sqlx::query!(
             r#"

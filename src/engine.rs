@@ -1,5 +1,5 @@
 use crate::{
-    data::{Candles, OrderReq, OrderType, Position, PositionSide, Side, Signal, TradingBot},
+    data::{Candles, OrderReq, OrderType, Position, PositionSide, Signal, TradingBot},
     db::Database,
     position_manager::PositionManager,
     rest_client::BinanceClient,
@@ -11,7 +11,6 @@ use rust_decimal::Decimal;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use tracing::info;
-use uuid::Uuid;
 
 impl TradingBot {
     pub fn new(
@@ -144,36 +143,36 @@ impl TradingBot {
 
         if !position_to_close.is_empty() {
             for (position_id, current_price, position_side) in position_to_close {
-                let exit_side = match position_side {
-                    PositionSide::Long => Side::Sell,
-                    PositionSide::Short => Side::Buy,
-                };
-
-                if let Ok(position) = self.position_manager.get_orders().await {
-                    let exit_order = OrderReq {
-                        id: Uuid::new_v4().to_string(),
-                        symbol: symbol.to_string(),
-                        side: exit_side,
-                        order_type: OrderType::Market,
-                        size: position.size,
-                        price: current_price,
-                        sl: None,
-                        tp: None,
-                        manual: false,
-                    };
-
-                    match self.execute_order(exit_order).await {
-                        Ok(_) => {
-                            self.position_manager
-                                .close_positions(&position_id, current_price)
-                                .await?;
-                            info!("Position closed after placing the order, successfully!");
+                match position_side {
+                    PositionSide::Long => {
+                        if let Ok(position) = self.position_manager.get_orders().await {
+                            let pnl = (current_price - position.entry_price) * position.size;
+                            match self.db.close_order(&position_id, current_price, pnl).await {
+                                Ok(_) => {
+                                    self.position_manager.close_positions(&position_id, current_price).await?;
+                                    info!("Long position closed!");
+                                },
+                                Err(e) => {
+                                    info!("Failed to close long position: {}", e);
+                                }
+                            }
                         }
-                        Err(e) => {
-                            info!("Failed to exit position: {:?}", e);
+                    },
+                    PositionSide::Short => {
+                        if let Ok(position) = self.position_manager.get_orders().await {
+                            let pnl = (current_price - position.entry_price) * position.size;
+                            match self.db.close_order(&position_id, current_price, pnl).await {
+                                Ok(_) => {
+                                    self.position_manager.close_positions(&position_id, current_price).await?;
+                                    info!("Short position closed!");
+                                },
+                                Err(e) => {
+                                    info!("Failed to close short position: {}", e);
+                                }
+                            }
                         }
                     }
-                }
+                } 
             }
         }
 
