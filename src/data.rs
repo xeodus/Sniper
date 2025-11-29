@@ -5,7 +5,7 @@ use tokio::sync::{mpsc, RwLock};
 use crate::{db::Database, position_manager::PositionManager, 
     rest_client::BinanceClient, signal::MarketSignal};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum PositionSide {
     Long,
     Short
@@ -41,13 +41,10 @@ pub struct Position {
     pub size: Decimal,
     pub stop_loss: Decimal,
     pub take_profit: Decimal,
-    pub opened_at: i64,
-    pub closed_at: i64,
-    pub exit_price: Decimal,
-    pub pnl: Decimal
+    pub opened_at: i64
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Candles {
     pub open: Decimal,
     pub high: Decimal,
@@ -71,7 +68,7 @@ pub struct OrderReq {
     pub manual: bool
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Signal {
     pub id: String,
     pub timestamp: i64,
@@ -84,6 +81,7 @@ pub struct Signal {
 
 #[allow(dead_code)]
 pub struct TradingBot {
+    pub current: Option<Position>,
     pub analyzer: Arc<RwLock<MarketSignal>>,
     pub position_manager: Arc<PositionManager>,
     pub binance_client: Arc<BinanceClient>,
@@ -109,10 +107,15 @@ pub struct BinanceKline {
     pub volume: String
 }
 
-/*#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct BinanceKlineEvent {
     #[serde(rename="e")]
     pub event_type: String,
+    #[serde(rename="E")]
+    pub event_time: i64,
+    #[serde(rename="s")]
+    pub symbol: String,
     #[serde(rename="k")]
     pub kline: BinanceKline
-}*/
+}

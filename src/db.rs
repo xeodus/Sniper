@@ -3,7 +3,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use anyhow::Result;
-use crate::data::{Position, PositionSide, Signal};
+use crate::data::{Candles, Position, PositionSide, Signal};
 
 pub struct Database {
     pub pool: PgPool
@@ -25,18 +25,16 @@ impl Database {
     pub async fn save_order(&self, position: &Position, manual: bool) -> Result<()> {
         let opened = position.opened_at;
         let opened_at = Utc.timestamp_opt(opened, 0).single().unwrap();
-        let closed = position.closed_at;
-        let closed_at = Utc.timestamp_opt(closed, 0).single().unwrap();
 
         sqlx::query!(
             r#"
             INSERT INTO trades (trade_id, symbol, side, entry_price, quantity,
-            stop_loss, take_profit, opened_at, closed_at, exit_price, pnl, status, manual)
-            VAlUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)               
+            stop_loss, take_profit, opened_at, status, manual)
+            VAlUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)               
             "#,
             position.id, position.symbol, format!("{:?}", position.position_side), position.entry_price,
             position.size, position.stop_loss, position.take_profit, opened_at,
-            closed_at, position.exit_price, position.pnl, "open", manual
+            "open", manual
         )
         .execute(&self.pool)
         .await?;
@@ -79,17 +77,19 @@ impl Database {
     }
 
     pub async fn get_open_orders(&self) -> Result<Vec<Position>> {
-        let query = sqlx::query_as::<_, (String, String, String, Decimal, Decimal, Decimal, 
-            Decimal, DateTime<Utc>, DateTime<Utc>, Decimal, Decimal)>
+        let query = sqlx::query_as::<_, (String, String, String, Decimal, 
+            Decimal, Decimal, Decimal, DateTime<Utc>)>
         (
             r#"
             SELECT trade_id, symbol, side, entry_price, quantity, 
-            stop_loss, take_profit, opened_at, closed_at, exit_price, pnl
-            FROM trades WHERE status = 'open'
+            stop_loss, take_profit, opened_at
+            FROM trades 
+            WHERE status = 'open'
             "#
         )
         .fetch_all(&self.pool)
-        .await?;
+        .await
+        .unwrap();
 
         let position = query.into_iter().map(|row| Position {
             id: row.0,
@@ -99,12 +99,31 @@ impl Database {
             size: row.4,
             stop_loss: row.5,
             take_profit: row.6,
-            opened_at: row.7.timestamp(),
-            closed_at: row.8.timestamp(),
-            exit_price: row.9,
-            pnl: row.10
+            opened_at: row.7.timestamp()
         }).collect();
 
         Ok(position)
+    }
+
+    pub async fn load_from_db(&self) -> Result<Vec<Candles>> {
+        let query = sqlx::query_as::<_, (i64, Decimal, Decimal, Decimal, Decimal, Decimal)>(
+            r#"
+            SELECT timestamp, open, high, low, close, volume
+            FROM candles
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let candle = query.into_iter().map(|row| Candles {
+            timestamp: row.0,
+            open: row.1,
+            high: row.2,
+            low: row.3,
+            close: row.4,
+            volume: row.5 
+        }).collect();
+
+        Ok(candle)
     }
 }

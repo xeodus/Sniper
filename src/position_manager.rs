@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use rust_decimal::Decimal;
 use tokio::sync::RwLock;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use tracing::info;
-use crate::{data::Position, db::Database};
+use crate::{data::{Position, PositionSide}, db::Database};
 
 pub struct PositionManager {
     pub position: Arc<RwLock<Vec<Position>>>,
@@ -21,34 +21,51 @@ impl PositionManager {
     }
 
     pub async fn load_open_orders(&self) -> Result<()> {
-        let position = self.db.get_open_orders().await?;
+        let position = self.db.get_open_orders().await.unwrap();
         let mut pos = self.position.write().await; 
         *pos = position;
         info!("Loaded open positions into the database: {}", pos.len());
         Ok(())
-    }
+    } 
 
-    pub async fn open_positions(&self, position: Position, manual: bool) -> Result<()> {
-        self.db.save_order(&position, manual).await?;
-        let mut positions = self.position.write().await;
-        positions.push(position.clone());
-        Ok(())
-    }
+    pub async fn get_orders(&self) -> Result<Position> {
+        let open_orders = self.db.get_open_orders().await?;
+
+        if open_orders.is_empty() {
+            info!("Failed to fetch open order from the database...");
+        }
+
+        if let Some(order) = open_orders.into_iter().next() {
+            Ok(order)
+        }
+        else {
+            info!("Can't find any open order...");
+            Err(anyhow!("No open orders..."))
+        }
+    } 
 
     pub async fn close_positions(&self, position_id: &str, exit_price: Decimal) -> Result<()> {
         let mut positions = self.position.write().await;
-
+        
         if let Some(pos) = positions.iter().find(|p| p.id == position_id) {
-            let pnl = (exit_price - pos.entry_price) * pos.size;
+            let pnl = match pos.position_side {
+                PositionSide::Long => {
+                    (exit_price - pos.entry_price) * pos.size
+                },
+                PositionSide::Short => {
+                    (pos.entry_price - exit_price) * pos.size
+                }
+            };
             self.db.close_order(position_id, exit_price, pnl).await?;
-            info!("Position closed: {} for PnL: {}", position_id, pnl);
+            info!("Closed position for id: {} at price: {} at pnl: {}", position_id, exit_price, pnl);
         }
-
+        
         positions.retain(|p| p.id != position_id);
+
         Ok(())
     }
 
-    pub async fn check_positions(&self, current_price: Decimal, symbol: &str) -> Vec<(String, Decimal)> {
+    pub async fn check_positions(&self, current_price: Decimal, symbol: &str) -> Vec<(String, Decimal, PositionSide)> {
         let positions = self.position.read().await;
         let mut to_close = Vec::new();
 
@@ -57,14 +74,39 @@ impl PositionManager {
                 continue;
             }
 
-            if current_price < position.stop_loss {
-                info!("Stop loss triggered for id {} at  price: {}", position.id, current_price);
-                to_close.push((position.id.clone(), current_price));
-            }
+            match position.position_side {
+                PositionSide::Long => {
+                    if current_price <= position.stop_loss {
+                        to_close.push(
+                            (position.id.clone(), current_price, position.position_side.clone())
+                        );
 
-            if current_price > position.take_profit {
-                info!("Take profit triggered for id {} at price: {}", position.id, current_price);
-                to_close.push((position.id.clone(), current_price));
+                        info!("Stop loss triggered for Long position for  id: {} at price: {}", position.id, current_price);
+                    }
+                    else if current_price >= position.take_profit {
+                        to_close.push(
+                            (position.id.clone(), current_price, position.position_side.clone())
+                        );
+
+                        info!("Take profit triggered for Long position for id: {} at price: {}", position.id, current_price);
+                    }
+                },
+                PositionSide::Short => {
+                    if current_price >= position.stop_loss {
+                        to_close.push(
+                            (position.id.clone(), current_price, position.position_side.clone())
+                        );
+
+                        info!("Stop loss triggered for Short position for id: {} at price: {}", position.id, current_price);
+                    }
+                    else if current_price <= position.take_profit {
+                        to_close.push(
+                            (position.id.clone(), current_price, position.position_side.clone())
+                        );
+
+                        info!("Take profit triggered for Short position for id: {} at price: {}", position.id, current_price);
+                    }
+                }
             }
         }
 

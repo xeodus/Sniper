@@ -24,6 +24,16 @@ CREATE TABLE IF NOT EXISTS signals (
     trend TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS candles (
+    timestamp TIMESTAMPTZ NOT NULL,
+    open DECIMAL(20, 8),
+    high DECIMAL(20, 8),
+    low DECIMAL(20, 8),
+    close DECIMAL(20, 8),
+    volume DECIMAL(20, 8)
+);
+
 CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol);
 CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);
 CREATE INDEX IF NOT EXISTS idx_signals_timestamp ON signals(timestamp);
+CREATE INDEX IF NOT EXISTS idx_candles_timestamp ON signals(timestamp);

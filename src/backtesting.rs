@@ -1,4 +1,4 @@
-use rust_decimal::{prelude::FromPrimitive, Decimal};
+use rust_decimal::{Decimal, prelude::{FromPrimitive, ToPrimitive}};
 use crate::{data::{Candles, Position, PositionSide, Side}, signal::MarketSignal};
 
 pub struct BackTesting {
@@ -27,20 +27,20 @@ impl BackTesting {
         }
     }
 
-    pub fn run(&self, historical_data: Vec<Candles>, symbol: String) -> BacktestResult {
+    pub fn run(&mut self, historical_data: Vec<Candles>, symbol: String) -> BacktestResult {
         let mut balance = self.init_amount;
         let mut total_pnl = Decimal::ZERO;
         let mut total_trades = 0;
         let mut winning_trades = 0;
 
         for candle in historical_data {
-            self.analyzer.add_candles(candle);
+            self.analyzer.add_candles(candle.clone());
 
             let mut closed_positions = Vec::new();
 
             for (i, position) in self.positions.iter().enumerate() {
                 if candle.low <= position.stop_loss {
-                    let pnl = (position.stop_loss - position.entry_price) * position.quantity;
+                    let pnl = (position.stop_loss - position.entry_price) * position.size;
                     total_pnl += pnl;
                     balance += position.stop_loss * position.size;
                     total_trades += 1;
@@ -85,14 +85,14 @@ impl BackTesting {
                         if cost <= balance {
                             balance -= cost;
                             self.positions.push(Position {
-                                id: format!("BT_{}", candle.timestamp),
+                                id: signal.id,
                                 symbol: symbol.clone(),
+                                position_side: PositionSide::Long,
                                 entry_price: signal.price,
-                                size,
+                                size: quantity,
                                 stop_loss,
                                 take_profit,
-                                opened_at: candle.timestamp,
-                                position_side: PositionSide::Long
+                                opened_at: candle.timestamp
                             });
                         }
                     }
@@ -106,7 +106,7 @@ impl BackTesting {
             0.0
         };
 
-        let return_pct = ((balance - self.init_amount) / self.init_amount * Decimal::new(100, 0));
+        let return_pct = ((balance - self.init_amount) / self.init_amount * Decimal::new(100, 0)).to_f64().unwrap_or(0.0);
 
         BacktestResult {
             init_balance: self.init_amount,
@@ -123,7 +123,7 @@ impl BackTesting {
 
 impl BacktestResult {
     pub fn print_summary(&self) {
-        println!("\n========== BACKTEST RESULTS ==========");
+        println!("\n======== BACKTEST RESULTS ============");
         println!("Initial Balance:    ${}", self.init_balance);
         println!("Final Balance:      ${}", self.final_balance);
         println!("Total PnL:          ${}", self.total_pnl);

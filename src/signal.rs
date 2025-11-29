@@ -90,8 +90,28 @@ impl MarketSignal {
         confidence
     }
 
-    pub fn determine_action(&self, rsi: f64, macd: f64, signal_line: f64, trend: &Trend) -> Side {
-        match trend {
+    pub fn detect_trend(&self) -> Trend {
+        if self.candles.len() < 50 {
+            return Trend::Sideways;
+        }
+
+        let ema_20 = self.calculate_ema(20);
+        let ema_50 = self.calculate_ema(50);
+        let recent_close = self.candles.last().unwrap().close;
+
+        if recent_close > ema_20 && ema_20 > ema_50 {
+            Trend::UpTrend
+        }
+        else if recent_close < ema_20 && ema_20 < ema_50 {
+            Trend::DownTrend
+        }
+        else {
+            Trend::Sideways
+        }
+    }
+
+    pub fn determine_action(&self, rsi: f64, macd: f64, signal_line: f64) -> Side {
+        match self.detect_trend() {
             Trend::UpTrend => {
                 if rsi < 30.0 && macd > signal_line {
                     Side::Buy
@@ -123,27 +143,7 @@ impl MarketSignal {
                 }
             }
         }
-    }
-
-    pub fn detect_trend(&self) -> Trend {
-        if self.candles.len() < 50 {
-            return Trend::Sideways;
-        }
-
-        let ema_20 = self.calculate_ema(20);
-        let ema_50 = self.calculate_ema(50);
-        let recent_close = self.candles.last().unwrap().close;
-
-        if recent_close > ema_20 && ema_20 > ema_50 {
-            Trend::UpTrend
-        }
-        else if recent_close < ema_20 && ema_20 < ema_50 {
-            Trend::DownTrend
-        }
-        else {
-            Trend::Sideways
-        }
-    }
+    } 
 
     pub fn analyze(&self, symbol: String) -> Option<Signal> {
         if self.candles.len() < 50 {
@@ -153,7 +153,7 @@ impl MarketSignal {
         let trend = self.detect_trend();
         let rsi = self.calculate_rsi();
         let (macd, signal) = self.calculate_macd();
-        let action = self.determine_action(rsi, macd, signal, &trend);
+        let action = self.determine_action(rsi, macd, signal);
         let latest_candle = self.candles.last()?;
         let confidence = Decimal::from_f64(self.calculate_confidence(rsi, macd, &trend)).unwrap();
 

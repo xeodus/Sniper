@@ -1,0 +1,10 @@
+{
+  "symbol": "ETH/USDT",
+  "timeframe": "1m",
+  "size": 1,
+  "risk_per_trade": 2.0,
+  "max_positions": 3,
+  "min_confidence": 0.7,
+  "stop_loss_percent": 2.0,
+  "take_profit_percent": 4.0
+}
