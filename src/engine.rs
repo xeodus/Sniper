@@ -1,16 +1,16 @@
 use crate::{
-    data::{Candles, OrderReq, OrderType, Position, PositionSide, Signal, TradingBot},
+    data::{Candles, OrderReq, OrderType, Position, PositionSide, Side, Signal, TradingBot},
     db::Database,
     position_manager::PositionManager,
     rest_client::BinanceClient,
     signal::MarketSignal,
 };
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use chrono::Utc;
 use rust_decimal::Decimal;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
-use tracing::info;
+use tracing::{error, info, warn};
 
 impl TradingBot {
     pub fn new(
@@ -22,7 +22,6 @@ impl TradingBot {
     ) -> Result<Self> {
         let position_manager = Arc::new(PositionManager::new(Decimal::new(2, 2), db.clone()));
         Ok(Self {
-            current: None,
             analyzer: Arc::new(RwLock::new(MarketSignal::new())),
             position_manager,
             signal_tx,
@@ -38,12 +37,92 @@ impl TradingBot {
         Ok(())
     }
 
-    pub async fn place_manual_order(&self, order: OrderReq) -> Result<()> {
+    pub async fn process_candle(&self, candle: Candles, symbol: &str) -> Result<()> {
+        {
+            let mut analyzer = self.analyzer.write().await;
+            analyzer.add_candles(candle.clone());
+        }
+
+        let position_to_close = self
+            .position_manager
+            .check_positions(candle.close, symbol)
+            .await;
+
+        if !position_to_close.is_empty() {
+            for (position_id, current_price, position_side) in position_to_close {
+                if let Some(position) = self.position_manager.get_positions_by_id(&position_id).await {
+                    let exit_side = match position_side {
+                        PositionSide::Long => Side::Sell,
+                        PositionSide::Short => Side::Buy
+                    };
+
+                    let req = OrderReq {
+                        id: position_id.to_string(),
+                        symbol: symbol.to_string(),
+                        side: exit_side,
+                        price: current_price,
+                        size: position.size,
+                        order_type: OrderType::Limit,
+                        sl: None,
+                        tp: None,
+                        manual: false
+                    }; 
+
+                    match self.execute_order(req).await {
+                        Ok(_) => {
+                            info!("Order succeeded, closing position...");
+                            self.position_manager.close_positions(&position_id, current_price).await?;
+                        },
+                        Err(e) => {
+                            error!("Failed to place order: {}", e);
+                        }
+                    }
+                }
+
+                let analyzer = self.analyzer.read().await;
+                let signal_opt = analyzer.analyze(symbol.to_string());
+
+                if let Some(signal) = signal_opt {
+                    if let Err(e) = self.db.save_signal(signal.clone()).await {
+                        warn!("Failed to save signal onto database: {}", e);
+                    }
+
+                    if let Err(e) = self.signal_tx.send(signal.clone()).await {
+                        warn!("Failed to send order: {}", e)
+                    }
+
+                    let confidence_threahold = Decimal::new(70, 2);
+
+                    if signal.confidence >= confidence_threahold {
+                        match signal.action {
+                            Side::Buy => {
+                                if let Err(e) = self.execute_entry_order(signal, position_side, OrderType::Market).await {
+                                    error!("Failed to place buy order for market price: {}", e);
+                                }
+                            },
+                            Side::Sell => {
+                                if let Err(e) = self.execute_entry_order(signal, position_side, OrderType::Market).await {
+                                    error!("Failed to place sell order for market price: {}", e);
+                                }
+                            },
+                            Side::Hold => {
+                                info!("Unclear trend detected, so holding the positions for now...");
+                            }
+                        }
+                    }
+                }
+            }
+        } 
+        Ok(())
+    }
+
+    /*pub async fn place_manual_order(&self, order: OrderReq) -> Result<()> {
         let mut manual_order = order;
         manual_order.manual = true;
         self.order_tx.send(manual_order).await?;
+        info!("Placed manual order!");
         Ok(())
-    }
+    }*/
 
     pub async fn execute_entry_order(
         &self,
@@ -69,10 +148,6 @@ impl TradingBot {
             .calculate_position_size(account_balance, signal.price, stop_loss)
             .await;
 
-        if position_size <= Decimal::ZERO {
-            return Err(anyhow!("position size can't be zero or less than zero"));
-        }
-
         let order = OrderReq {
             id: signal.id.clone(),
             symbol: signal.symbol.clone(),
@@ -96,24 +171,25 @@ impl TradingBot {
             stop_loss,
         };
 
-        match self.current {
-            None => {
-                self.place_manual_order(order).await?;
-                info!("Placed manual order on the exchange!");
-                self.db.save_signal(signal).await?;
-                info!("Signal saved into the database!");
-                self.db.save_order(&position, true).await?;
-                info!("Manual order saved in the database!");
-            }
-            Some(_) => {
-                self.execute_order(order).await?;
-                info!("Placed order on Binance...");
-                self.db.save_signal(signal).await?;
-                info!("Signal saved into the database!");
-                self.db.save_order(&position, false).await?;
-                info!("Order saved on the database!");
-            }
+        if position_size <= Decimal::ZERO {
+            self.binance_client.cancel_orders(&order).await?;
+            error!("Invalid position size, cancelling the order...");
         }
+
+        if order.tp == None || order.sl == None {
+            self.binance_client.cancel_orders(&order).await?;
+            error!("Take profit and stop loss is not set, cancelling the order...");
+        }
+
+        match self.execute_order(order).await {
+            Ok(_) => {
+                self.position_manager.open_position(position, false).await?;
+                info!("Position opened successfully!");
+            }
+            Err(e) => {
+                warn!("Failed to execute order: {}", e);
+            }
+        } 
 
         Ok(())
     }
@@ -128,54 +204,5 @@ impl TradingBot {
         }
 
         Ok(())
-    }
-
-    pub async fn process_candle(&self, candle: Candles, symbol: &str) -> Result<()> {
-        {
-            let mut analyzer = self.analyzer.write().await;
-            analyzer.add_candles(candle.clone());
-        }
-
-        let position_to_close = self
-            .position_manager
-            .check_positions(candle.close, symbol)
-            .await;
-
-        if !position_to_close.is_empty() {
-            for (position_id, current_price, position_side) in position_to_close {
-                match position_side {
-                    PositionSide::Long => {
-                        if let Ok(position) = self.position_manager.get_orders().await {
-                            let pnl = (current_price - position.entry_price) * position.size;
-                            match self.db.close_order(&position_id, current_price, pnl).await {
-                                Ok(_) => {
-                                    self.position_manager.close_positions(&position_id, current_price).await?;
-                                    info!("Long position closed!");
-                                },
-                                Err(e) => {
-                                    info!("Failed to close long position: {}", e);
-                                }
-                            }
-                        }
-                    },
-                    PositionSide::Short => {
-                        if let Ok(position) = self.position_manager.get_orders().await {
-                            let pnl = (current_price - position.entry_price) * position.size;
-                            match self.db.close_order(&position_id, current_price, pnl).await {
-                                Ok(_) => {
-                                    self.position_manager.close_positions(&position_id, current_price).await?;
-                                    info!("Short position closed!");
-                                },
-                                Err(e) => {
-                                    info!("Failed to close short position: {}", e);
-                                }
-                            }
-                        }
-                    }
-                } 
-            }
-        }
-
-        Ok(())
-    }
+    } 
 }

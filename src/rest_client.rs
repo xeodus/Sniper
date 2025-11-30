@@ -65,7 +65,7 @@ impl BinanceClient {
             Utc::now().timestamp_millis()
         );
 
-        let url = "https://api.binance.com/api/v3/order";
+        let url = "https://testnet.binance.vision/api/v3/order";
         let sign = signature(self.api_secret.as_bytes(), &body).await;
         let response = self
             .client
@@ -114,7 +114,7 @@ impl BinanceClient {
             Utc::now().timestamp_millis()
         );
 
-        let url = "https://api.binance.com/api/v3/order";
+        let url = "https://testnet.binance.vision/api/v3/order";
         let sign = signature(self.api_secret.as_bytes(), &body).await;
         let response = self
             .client
@@ -139,7 +139,7 @@ impl BinanceClient {
             "Cancelling the order for ID {} and symbol {}",
             req.id, req.symbol
         );
-        let url = "https://api.binance.com/api/v3/order";
+        let url = "https://testnet.binance.vision/api/v3/order";
         let now = Utc::now().timestamp_millis().to_string();
         let symbol = req.symbol.replace("/", "").to_uppercase();
         let query_string = format!(

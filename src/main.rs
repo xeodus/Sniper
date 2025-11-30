@@ -1,6 +1,6 @@
 use crate::{
     backtesting::BackTesting,
-    data::{Candles, OrderReq, OrderType, Side, Signal, TradingBot},
+    data::{Candles, OrderReq, Signal, TradingBot},
     db::Database,
     rest_client::BinanceClient,
     websocket::WebSocketClient,
@@ -16,7 +16,6 @@ use tokio::{
     time::{interval, sleep, Duration},
 };
 use tracing::{error, info, warn};
-use uuid::Uuid;
 
 mod backtesting;
 mod data;
@@ -62,89 +61,24 @@ async fn main() -> Result<()> {
     )?);
 
     bot.initializer().await?;
-    let bot_clone = bot.clone();
-    let position = bot_clone.position_manager.get_orders().await?;
 
-    let order_handler = tokio::spawn(async move {
-        let decimal = Decimal::from_f64(100.0).unwrap();
-        let signal = signal_rx.recv().await.unwrap();
+    info!("Trading bot is initialized!");
 
+    let signal_monitor = tokio::spawn(async move {
         while let Some(signal) = signal_rx.recv().await {
-            info!(
-                "Signal: {:?} {} | Confidence {:.2}",
-                signal.action,
-                signal.symbol,
-                signal.confidence * decimal
+            info!("Signal received: Side: {:?}, symbol: {} @ confidence: {:.2}",
+                signal.action, signal.symbol, signal.confidence * Decimal::new(100, 2)
             );
         }
-
-        while let Some(order) = order_rx.recv().await {
-            info!("Executed order: {:?}", order);
-            if let Err(e) = bot_clone
-                .execute_entry_order(signal.clone(), position.position_side, order.order_type)
-                .await
-            {
-                tracing::error!("Failed to execute order: {}", e);
-            }
-        }
-
-        match signal.action {
-            Side::Buy => {
-                let manual_order = OrderReq {
-                    symbol: "ETHUSDT".to_string(),
-                    id: Uuid::new_v4().to_string(),
-                    side: Side::Buy,
-                    order_type: OrderType::Limit,
-                    size: Decimal::new(1, 0),
-                    price: signal.price,
-                    tp: Some(Decimal::new(3200, 2)),
-                    sl: Some(Decimal::new(2900, 2)),
-                    manual: true,
-                };
-
-                if let Err(e) = bot_clone.place_manual_order(manual_order.clone()).await {
-                    tracing::error!("Failed to place buy order on  manual mode: {}", e);
-                    return binance_client.cancel_orders(&manual_order).await;
-                }
-            }
-            Side::Sell => {
-                let manual_order = OrderReq {
-                    id: Uuid::new_v4().to_string(),
-                    symbol: "ETHUSDT".to_string(),
-                    side: Side::Sell,
-                    order_type: OrderType::Market,
-                    size: Decimal::new(1, 0),
-                    price: signal.price,
-                    tp: None,
-                    sl: None,
-                    manual: true,
-                };
-
-                if let Err(e) = bot_clone.place_manual_order(manual_order.clone()).await {
-                    error!("Failed to place sell order on manual mode: {}", e);
-                    return binance_client.cancel_orders(&manual_order).await;
-                }
-            }
-            Side::Hold => {
-                info!("Unclear signal received holding position till further trend detection...");
-            }
-        }
-
-        let mut interval = interval(Duration::from_secs(60));
-
-        loop {
-            interval.tick().await;
-
-            match binance_client.account_balance().await {
-                Ok(balance) => {
-                    info!("Account balance: {}", balance);
-                }
-                Err(e) => {
-                    tracing::error!("Failed to get account balance: {}", e);
-                }
-            }
-        }
     });
+
+    let order_monitor = tokio::spawn(async move {
+        while let Some(order) = order_rx.recv().await {
+            info!("Order received: Side: {:?}, symbol: {} @ price: {}",
+                order.side, order.symbol, order.price
+            );
+        }
+    }); 
 
     let symbol = "ETH/USDT";
     let symbol_lower = symbol.to_lowercase().replace("/", "");
@@ -157,6 +91,7 @@ async fn main() -> Result<()> {
         let mut backoff = Duration::from_secs(1);
         let max_backoff = Duration::from_secs(30);
         let ws = WebSocketClient::new(&symbol_lower, "1m");
+        let mut interval = interval(Duration::from_secs(15));
 
         loop {
             let stream = match ws.connect().await {
@@ -172,6 +107,17 @@ async fn main() -> Result<()> {
                     continue;
                 }
             };
+
+            interval.tick().await;
+
+            match binance_client.account_balance().await {
+                Ok(balance) => {
+                    info!("Account balance: {}", balance);
+                },
+                Err(e) => {
+                    error!("Failed to get account balance: {}", e);
+                }
+            }
 
             pin_mut!(stream);
 
@@ -209,8 +155,11 @@ async fn main() -> Result<()> {
     info!("WebSocket running; press Ctrl+C to exit!");
 
     tokio::select! {
-        result = order_handler => {
-            error!("Order handler thread stopped unexpectedly: {:?}", result);
+        result = signal_monitor => {
+            error!("Signal monitoring thread stopped unexpectedly: {:?}", result);
+        }
+        result = order_monitor => {
+            error!("Order monitoring thread stopped unexpectedly: {:?}", result);
         }
         result = ws_handler => {
             error!("WebSocket handler thread stopped unexpectedly: {:?}", result);

@@ -23,31 +23,60 @@ impl PositionManager {
         }
     }
 
-    pub async fn load_open_orders(&self) -> Result<()> {
-        let position = self.db.get_open_orders().await.unwrap();
-        let mut pos = self.position.write().await;
-        *pos = position;
-        info!("Loaded open positions into the database: {}", pos.len());
+    pub async fn load_open_orders(&self) -> Result<()> { 
+        let positions = self.db.get_open_orders().await?;
+        let count = positions.len();
+        let mut position = self.position.write().await;
+        *position = positions;
+        
+        info!("Loaded open positions into the database: {}", count);
+
         Ok(())
     }
 
-    pub async fn get_orders(&self) -> Result<Position> {
-        let open_orders = self.db.get_open_orders().await?;
+    /*pub async fn get_orders(&self) -> Vec<Position> {
+        let positions = self.position.read().await;
+        positions.clone()
+    }*/
 
-        if open_orders.is_empty() {
-            info!("Failed to fetch open order from the database...");
+    pub async fn get_positions_by_id(&self, position_id: &str) -> Option<Position> {
+        let positions = self.position.read().await;
+
+        if let Some(position) = positions.iter().find(|f| f.id == position_id) {
+            Some(position.clone())
+        }
+        else {
+            info!("Can't fetch position via ID...");
+            None
+        }
+    }
+
+    pub async fn has_positions(&self) -> bool {
+        let positions = self.position.read().await;
+        !positions.is_empty()
+    }
+
+    pub async fn open_position(&self, position: Position, manual: bool) -> Result<()> {
+        if position.entry_price == Decimal::ZERO || position.size == Decimal::ZERO {
+            info!("Attempt to open position with size zero, rejected...");
+            return Ok(());
         }
 
-        if let Some(order) = open_orders.into_iter().next() {
-            Ok(order)
-        } else {
-            info!("Can't find any open order...");
-            Err(anyhow!("No open orders..."))
-        }
+        self.db.save_order(&position, manual).await?;
+
+        let mut positions = self.position.write().await;
+        positions.push(position.clone());
+
+        info!("New position opened!");
+        Ok(())
     }
 
     pub async fn close_positions(&self, position_id: &str, exit_price: Decimal) -> Result<()> {
         let mut positions = self.position.write().await;
+
+        if !self.has_positions().await {
+            return Err(anyhow!("No open positions found to be closed!"));
+        }
 
         if let Some(pos) = positions.iter().find(|p| p.id == position_id) {
             let pnl = match pos.position_side {

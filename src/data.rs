@@ -83,7 +83,6 @@ pub struct Signal {
 
 #[allow(dead_code)]
 pub struct TradingBot {
-    pub current: Option<Position>,
     pub analyzer: Arc<RwLock<MarketSignal>>,
     pub position_manager: Arc<PositionManager>,
     pub binance_client: Arc<BinanceClient>,
