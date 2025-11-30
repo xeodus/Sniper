@@ -28,8 +28,8 @@ pub enum OrderType {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Trend {
-    UpTrend,
-    DownTrend,
+    Up,
+    Down,
     Sideways,
 }
 
@@ -88,7 +88,7 @@ pub struct TradingBot {
     pub binance_client: Arc<BinanceClient>,
     pub signal_tx: mpsc::Sender<Signal>,
     pub order_tx: mpsc::Sender<OrderReq>,
-    pub account_balace: Arc<RwLock<Decimal>>,
+    pub account_balance: Arc<RwLock<Decimal>>,
     pub db: Arc<Database>,
 }
 

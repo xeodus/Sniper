@@ -33,7 +33,7 @@ impl BinanceClient {
         let url = format!("{}/api/v3/account", self.base_url);
         let mock_data = signature(self.api_secret.as_bytes(), &url).await;
         info!("Fetching account details: {:?}", mock_data);
-        Ok(Decimal::new(10000, 4))
+        Ok(Decimal::new(50000, 1))
     }
 
     pub async fn place_market_order(&self, req: &OrderReq) -> Result<String> {

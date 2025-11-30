@@ -23,29 +23,23 @@ impl PositionManager {
         }
     }
 
-    pub async fn load_open_orders(&self) -> Result<()> { 
+    pub async fn load_open_orders(&self) -> Result<()> {
         let positions = self.db.get_open_orders().await?;
         let count = positions.len();
         let mut position = self.position.write().await;
         *position = positions;
-        
+
         info!("Loaded open positions into the database: {}", count);
 
         Ok(())
     }
-
-    /*pub async fn get_orders(&self) -> Vec<Position> {
-        let positions = self.position.read().await;
-        positions.clone()
-    }*/
 
     pub async fn get_positions_by_id(&self, position_id: &str) -> Option<Position> {
         let positions = self.position.read().await;
 
         if let Some(position) = positions.iter().find(|f| f.id == position_id) {
             Some(position.clone())
-        }
-        else {
+        } else {
             info!("Can't fetch position via ID...");
             None
         }
@@ -62,10 +56,11 @@ impl PositionManager {
             return Ok(());
         }
 
-        self.db.save_order(&position, manual).await?;
-
-        let mut positions = self.position.write().await;
-        positions.push(position.clone());
+        if !self.has_positions().await {
+            self.db.save_order(&position, manual).await?;
+            let mut positions = self.position.write().await;
+            positions.push(position.clone());
+        }
 
         info!("New position opened!");
         Ok(())
@@ -111,22 +106,14 @@ impl PositionManager {
             match position.position_side {
                 PositionSide::Long => {
                     if current_price <= position.stop_loss {
-                        to_close.push((
-                            position.id.clone(),
-                            current_price,
-                            position.position_side.clone(),
-                        ));
+                        to_close.push((position.id.clone(), current_price, position.position_side));
 
                         info!(
                             "Stop loss triggered for Long position for  id: {} at price: {}",
                             position.id, current_price
                         );
                     } else if current_price >= position.take_profit {
-                        to_close.push((
-                            position.id.clone(),
-                            current_price,
-                            position.position_side.clone(),
-                        ));
+                        to_close.push((position.id.clone(), current_price, position.position_side));
 
                         info!(
                             "Take profit triggered for Long position for id: {} at price: {}",
@@ -136,22 +123,14 @@ impl PositionManager {
                 }
                 PositionSide::Short => {
                     if current_price >= position.stop_loss {
-                        to_close.push((
-                            position.id.clone(),
-                            current_price,
-                            position.position_side.clone(),
-                        ));
+                        to_close.push((position.id.clone(), current_price, position.position_side));
 
                         info!(
                             "Stop loss triggered for Short position for id: {} at price: {}",
                             position.id, current_price
                         );
                     } else if current_price <= position.take_profit {
-                        to_close.push((
-                            position.id.clone(),
-                            current_price,
-                            position.position_side.clone(),
-                        ));
+                        to_close.push((position.id.clone(), current_price, position.position_side));
 
                         info!(
                             "Take profit triggered for Short position for id: {} at price: {}",

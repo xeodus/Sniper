@@ -83,7 +83,7 @@ impl MarketSignal {
 
     pub fn calculate_confidence(&self, rsi: f64, macd: f64, trend: &Trend) -> f64 {
         let mut confidence = 0.5;
-        if rsi < 30.0 || rsi > 70.0 {
+        if !(30.0..70.0).contains(&rsi) {
             confidence += 0.2;
         }
         if macd.abs() > 0.01 {
@@ -105,9 +105,9 @@ impl MarketSignal {
         let recent_close = self.candles.last().unwrap().close;
 
         if recent_close > ema_20 && ema_20 > ema_50 {
-            Trend::UpTrend
+            Trend::Up
         } else if recent_close < ema_20 && ema_20 < ema_50 {
-            Trend::DownTrend
+            Trend::Down
         } else {
             Trend::Sideways
         }
@@ -115,7 +115,7 @@ impl MarketSignal {
 
     pub fn determine_action(&self, rsi: f64, macd: f64, signal_line: f64) -> Side {
         match self.detect_trend() {
-            Trend::UpTrend => {
+            Trend::Up => {
                 if rsi < 30.0 && macd > signal_line {
                     Side::Buy
                 } else if rsi > 70.0 {
@@ -124,7 +124,7 @@ impl MarketSignal {
                     Side::Hold
                 }
             }
-            Trend::DownTrend => {
+            Trend::Down => {
                 if rsi > 70.0 && macd < signal_line {
                     Side::Sell
                 } else {
@@ -155,7 +155,7 @@ impl MarketSignal {
         let latest_candle = self.candles.last()?;
         let confidence = Decimal::from_f64(self.calculate_confidence(rsi, macd, &trend)).unwrap();
 
-        return Some(Signal {
+        Some(Signal {
             id: Uuid::new_v4().to_string(),
             timestamp: latest_candle.timestamp,
             symbol,
@@ -163,6 +163,6 @@ impl MarketSignal {
             trend: trend.clone(),
             price: latest_candle.close,
             confidence,
-        });
+        })
     }
 }

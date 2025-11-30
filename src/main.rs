@@ -66,19 +66,23 @@ async fn main() -> Result<()> {
 
     let signal_monitor = tokio::spawn(async move {
         while let Some(signal) = signal_rx.recv().await {
-            info!("Signal received: Side: {:?}, symbol: {} @ confidence: {:.2}",
-                signal.action, signal.symbol, signal.confidence * Decimal::new(100, 2)
+            info!(
+                "Signal received: Side: {:?}, symbol: {} @ confidence: {:.2}",
+                signal.action,
+                signal.symbol,
+                signal.confidence * Decimal::new(100, 2)
             );
         }
     });
 
     let order_monitor = tokio::spawn(async move {
         while let Some(order) = order_rx.recv().await {
-            info!("Order received: Side: {:?}, symbol: {} @ price: {}",
+            info!(
+                "Order received: Side: {:?}, symbol: {} @ price: {}",
                 order.side, order.symbol, order.price
             );
         }
-    }); 
+    });
 
     let symbol = "ETH/USDT";
     let symbol_lower = symbol.to_lowercase().replace("/", "");
@@ -113,7 +117,7 @@ async fn main() -> Result<()> {
             match binance_client.account_balance().await {
                 Ok(balance) => {
                     info!("Account balance: {}", balance);
-                },
+                }
                 Err(e) => {
                     error!("Failed to get account balance: {}", e);
                 }

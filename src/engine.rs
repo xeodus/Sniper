@@ -27,7 +27,7 @@ impl TradingBot {
             signal_tx,
             order_tx,
             binance_client,
-            account_balace: Arc::new(RwLock::new(initial_balance)),
+            account_balance: Arc::new(RwLock::new(initial_balance)),
             db,
         })
     }
@@ -50,10 +50,14 @@ impl TradingBot {
 
         if !position_to_close.is_empty() {
             for (position_id, current_price, position_side) in position_to_close {
-                if let Some(position) = self.position_manager.get_positions_by_id(&position_id).await {
+                if let Some(position) = self
+                    .position_manager
+                    .get_positions_by_id(&position_id)
+                    .await
+                {
                     let exit_side = match position_side {
                         PositionSide::Long => Side::Sell,
-                        PositionSide::Short => Side::Buy
+                        PositionSide::Short => Side::Buy,
                     };
 
                     let req = OrderReq {
@@ -65,14 +69,16 @@ impl TradingBot {
                         order_type: OrderType::Limit,
                         sl: None,
                         tp: None,
-                        manual: false
-                    }; 
+                        manual: false,
+                    };
 
                     match self.execute_order(req).await {
                         Ok(_) => {
                             info!("Order succeeded, closing position...");
-                            self.position_manager.close_positions(&position_id, current_price).await?;
-                        },
+                            self.position_manager
+                                .close_positions(&position_id, current_price)
+                                .await?;
+                        }
                         Err(e) => {
                             error!("Failed to place order: {}", e);
                         }
@@ -96,23 +102,31 @@ impl TradingBot {
                     if signal.confidence >= confidence_threahold {
                         match signal.action {
                             Side::Buy => {
-                                if let Err(e) = self.execute_entry_order(signal, position_side, OrderType::Market).await {
+                                if let Err(e) = self
+                                    .execute_entry_order(signal, position_side, OrderType::Market)
+                                    .await
+                                {
                                     error!("Failed to place buy order for market price: {}", e);
                                 }
-                            },
+                            }
                             Side::Sell => {
-                                if let Err(e) = self.execute_entry_order(signal, position_side, OrderType::Market).await {
+                                if let Err(e) = self
+                                    .execute_entry_order(signal, position_side, OrderType::Market)
+                                    .await
+                                {
                                     error!("Failed to place sell order for market price: {}", e);
                                 }
-                            },
+                            }
                             Side::Hold => {
-                                info!("Unclear trend detected, so holding the positions for now...");
+                                info!(
+                                    "Unclear trend detected, so holding the positions for now..."
+                                );
                             }
                         }
                     }
                 }
             }
-        } 
+        }
         Ok(())
     }
 
@@ -130,7 +144,7 @@ impl TradingBot {
         position_side: PositionSide,
         order_type: OrderType,
     ) -> Result<()> {
-        let account_balance = *self.account_balace.read().await;
+        let account_balance = *self.account_balance.read().await;
 
         let (take_profit, stop_loss) = match position_side {
             PositionSide::Long => (
@@ -176,7 +190,7 @@ impl TradingBot {
             error!("Invalid position size, cancelling the order...");
         }
 
-        if order.tp == None || order.sl == None {
+        if order.tp.is_none() || order.sl.is_none() {
             self.binance_client.cancel_orders(&order).await?;
             error!("Take profit and stop loss is not set, cancelling the order...");
         }
@@ -189,7 +203,7 @@ impl TradingBot {
             Err(e) => {
                 warn!("Failed to execute order: {}", e);
             }
-        } 
+        }
 
         Ok(())
     }
@@ -204,5 +218,5 @@ impl TradingBot {
         }
 
         Ok(())
-    } 
+    }
 }

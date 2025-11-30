@@ -65,7 +65,7 @@ impl WebSocketClient {
                         }))
                     } else {
                         warn!("Failed to parse OHLCV decimals from kline: {:?}", k);
-                        return None;
+                        None
                     }
                 }
                 Ok(Message::Ping(_) | Message::Pong(_)) => None,
