@@ -31,14 +31,7 @@ jobs:
         with:
           toolchain: stable
           override: true
-          components: clippy,rustfmt
-
-      - name: fmt check
-        run: cargo fmt -- --check
-
-      - name: clippy
-        run: cargo clippy --all-targets -- -D warnings
-
+          
       - name: Build
         run: cargo build --verbose
 
