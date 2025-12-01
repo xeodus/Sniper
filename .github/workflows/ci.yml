@@ -6,41 +6,46 @@ on:
   pull_request:
     branches: ["master"]
 
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sniper
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      CARGO_TERM_COLOR: always
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/sniper
 
     steps:
       - uses: actions/checkout@v4
 
-      # Cache registry/git and target to speed up builds
-      - name: Cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-          override: true
           components: clippy, rustfmt
+
+      - name: Run migrations
+        run: cargo sqlx migrate run
 
       - name: fmt check
         run: cargo fmt -- --check
 
       - name: clippy
         run: cargo clippy --all-targets -- -D warnings
-          
-      - name: Build
-        run: cargo build --verbose
 
-      - name: Run tests
-        run: cargo test --verbose
+      - name: Tests
+        run: cargo test --all-targets --verbose
+
