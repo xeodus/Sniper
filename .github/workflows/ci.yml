@@ -37,15 +37,14 @@ jobs:
           toolchain: stable
           components: clippy, rustfmt
 
-      - name: Run migrations
-        run: cargo sqlx migrate run
-
       - name: fmt check
         run: cargo fmt -- --check
 
       - name: clippy
         run: cargo clippy --all-targets -- -D warnings
 
-      - name: Tests
-        run: cargo test --all-targets --verbose
+      - name: Build
+        run: cargo build --verbose
 
+      - name: Tests
+        run: cargo test --rebase
