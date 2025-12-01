@@ -27,7 +27,7 @@ jobs:
 
     env:
       CARGO_TERM_COLOR: always
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/sniper
+      DATABASE_URL: postgres://ricky:password@localhost:5432/sniper
 
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +36,12 @@ jobs:
         with:
           toolchain: stable
           components: clippy, rustfmt
+
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli --no-default-features --features postgres,chrono,rust_decimal,runtime-tokio-native-tls
+
+      - name: Run database migrations
+        run: cargo sqlx migrate run
 
       - name: fmt check
         run: cargo fmt -- --check
